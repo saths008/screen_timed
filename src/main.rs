@@ -1,65 +1,29 @@
 use active_win_pos_rs::get_active_window;
 use csv::ReaderBuilder;
-use csv::WriterBuilder;
+// use csv::WriterBuilder;
 use std::collections::HashMap;
+use std::error::Error;
 use std::io;
-use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::{fmt, thread, time};
-#[derive(Debug, Clone)]
-struct CSVWriterError;
-impl fmt::Display for CSVWriterError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Missing CSV or CSV Writer error")
-    }
-}
-#[derive(Debug, Clone)]
-struct CSVReaderError;
-impl fmt::Display for CSVReaderError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Missing CSV or CSV Reader error")
-    }
-}
+use std::{thread, time};
 
-fn read_csv(csv_path: String) -> Result<bool, CSVReaderError> {
-    let rdr_result = ReaderBuilder::new().from_path(csv_path);
-    let mut rdr = match rdr_result {
-        Ok(rdr_arm) => rdr_arm,
-        Err(_) => {
-            return Err(CSVReaderError);
-        }
-    };
+fn read_csv(csv_path: String) -> Result<(), Box<dyn Error>> {
+    let mut rdr = ReaderBuilder::new().from_path(csv_path)?;
     for result in rdr.records() {
-        let record_res = result;
-        let record = match record_res {
-            Ok(record_arm) => record_arm,
-            Err(_) => {
-                return Err(CSVReaderError);
-            }
-        };
-
+        let record = result?;
         println!("{:?}", record);
     }
-    Ok(true)
+    println!("Finish read_csv method");
+    Ok(())
 }
-fn write_data_to_csv(
-    program_times: &HashMap<String, time::Duration>,
-    csv_path: String,
-) -> Result<bool, CSVWriterError> {
-    if !Path::new(&csv_path).exists() {
-        return Err(CSVWriterError);
-    }
-    let mut wtr_result = WriterBuilder::new().from_path("foo.csv");
-    let mut wtr = match wtr_result {
-        Ok(wtr_arm) => wtr_arm,
-        Err(_) => {
-            return Err(CSVWriterError);
-        }
-    };
-
-    Ok(true)
-}
+// fn write_data_to_csv(
+//     program_times: &HashMap<String, time::Duration>,
+//     csv_path: String,
+// ) -> Result<(), Box<dyn Error>> {
+//     let mut wtr_result = WriterBuilder::new().from_path(csv_path)?;
+//     Ok(())
+// }
 fn screen_time_daemon(program_times: &mut HashMap<String, time::Duration>) {
     match get_active_window() {
         Ok(active_window) => {
@@ -95,6 +59,11 @@ fn main() -> Result<(), io::Error> {
     println!("Sigint received!");
     for (program_name, duration) in &program_times {
         println!("{}: {}", program_name, duration.as_secs());
+    }
+    let read_result = read_csv("screen_time_data.csv".to_string());
+    match read_result {
+        Ok(_) => println!("read csv success"),
+        Err(e) => println!("error reading csv: {}", e),
     }
     Ok(())
 }
