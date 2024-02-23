@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 active-win-pos-rs = "0.8"
 signal-hook="0.3"
+csv="1.3"
