@@ -6,11 +6,12 @@ use serde_with::serde_as;
 use serde_with::TimestampSeconds;
 use std::collections::HashMap;
 use std::error::Error;
-use std::io;
+use std::fs::OpenOptions;
 use std::io::prelude::*;
 use std::net::Shutdown;
 use std::os::unix::net::UnixListener;
 use std::os::unix::net::UnixStream;
+use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -25,6 +26,8 @@ fn close_socket() -> Result<(), Box<dyn Error>> {
 fn listen_for_connections(
     listener: &UnixListener,
     terminating_arc: &Arc<AtomicBool>,
+    current_path: &Arc<String>,
+    update_csv: &Arc<AtomicBool>,
 ) -> Result<(), Box<dyn Error>> {
     for stream in listener.incoming() {
         if terminating_arc.load(Ordering::Relaxed) {
@@ -33,7 +36,7 @@ fn listen_for_connections(
         match stream {
             Ok(stream) => {
                 println!("new client!");
-                handle_client(stream)?;
+                handle_client(stream, current_path, update_csv)?;
             }
             Err(err) => {
                 println!("Error: {}", err);
@@ -47,12 +50,22 @@ fn create_socket() -> Result<UnixListener, Box<dyn Error>> {
     let listener = UnixListener::bind("/tmp/screen-time-sock")?;
     Ok(listener)
 }
-fn handle_client(mut stream: UnixStream) -> Result<(), Box<dyn Error>> {
+fn handle_client(
+    mut stream: UnixStream,
+    current_path: &Arc<String>,
+    update_csv: &Arc<AtomicBool>,
+) -> Result<(), Box<dyn Error>> {
     let mut received = String::new();
     stream.read_to_string(&mut received)?;
-    println!("{}", received);
 
-    let response = "Hello from the server!";
+    if received == "Update" {
+        println!("Received update request!");
+        update_csv.store(true, Ordering::Relaxed);
+    } else {
+        println!("Received invalid request! - {}", received);
+    }
+
+    let response = current_path.to_string();
     stream.write_all(response.as_bytes())?;
     Ok(())
 }
@@ -74,18 +87,20 @@ struct Row<'a> {
     application: &'a str,
     duration: u64,
 }
-fn _write_data_to_csv(
-    _program_times: &HashMap<String, time::Duration>,
-    csv_path: String,
+fn write_data_to_csv(
+    program_times: &HashMap<String, time::Duration>,
+    csv_path: &String,
 ) -> Result<(), Box<dyn Error>> {
-    let mut wtr = WriterBuilder::new().has_headers(true).from_path(csv_path)?;
-    for (program_name, duration) in _program_times {
+    let file = OpenOptions::new().append(true).open(csv_path)?;
+    let mut wtr = WriterBuilder::new().has_headers(false).from_writer(file);
+    for (program_name, duration) in program_times {
         wtr.serialize(Row {
             timestamp: SystemTime::now(),
             application: program_name,
             duration: duration.as_secs(),
         })?;
     }
+    wtr.flush()?;
     Ok(())
 }
 fn screen_time_daemon(program_times: &mut HashMap<String, time::Duration>) {
@@ -106,18 +121,41 @@ fn screen_time_daemon(program_times: &mut HashMap<String, time::Duration>) {
     }
 }
 
-fn main() -> Result<(), io::Error> {
+fn main() -> Result<(), Box<dyn Error>> {
     let pid = std::process::id();
     println!("PID of the current Rust program: {}", pid);
+    // When true, update csv
+    let update_csv = Arc::new(AtomicBool::new(false));
+    let child_update_csv = Arc::clone(&update_csv);
+
     let program_finished = Arc::new(AtomicBool::new(false));
     signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&program_finished))?;
     let child_program_finished = Arc::clone(&program_finished);
+    let current_path: PathBuf = std::env::current_dir()?;
+    let current_path_str = match current_path.to_str() {
+        Some(path) => {
+            let mut full_path = path.to_string();
+            full_path.push_str("/screen_time_data.csv");
+            Arc::new(full_path)
+        }
+        None => {
+            println!("Error getting current path");
+            std::process::exit(1);
+        }
+    };
+    println!("Current path: {:?}", current_path_str);
 
     thread::Builder::new()
         .name("screen_time_daemon".to_string())
         .spawn(move || {
             let listener = create_socket().unwrap();
-            listen_for_connections(&listener, &child_program_finished).unwrap();
+            listen_for_connections(
+                &listener,
+                &child_program_finished,
+                &current_path_str,
+                &child_update_csv,
+            )
+            .unwrap();
 
             println!("Closing socket...");
             close_socket().unwrap();
@@ -127,7 +165,23 @@ fn main() -> Result<(), io::Error> {
     let mut program_times: HashMap<String, time::Duration> = HashMap::new();
     //
     // Keep executing as long the SIGTERM has not been called.
-    while !program_finished.load(Ordering::Relaxed) {
+
+    let csv_path = "screen_time_data.csv".to_string();
+    // 1, 0 ->  1 - run screen_time_daemon
+    // 0, 1 ->  1 -  break
+    // 0, 0 -> 0 - break
+    // 1, 1 -> 1 -  update_csv
+    while !program_finished.load(Ordering::Relaxed) || update_csv.load(Ordering::Relaxed) {
+        if program_finished.load(Ordering::Relaxed) {
+            break;
+        }
+        if update_csv.load(Ordering::Relaxed) {
+            println!("Updating csv...");
+            write_data_to_csv(&program_times, &csv_path)?;
+            program_times.clear();
+            update_csv.store(false, Ordering::Relaxed);
+        }
+
         thread::sleep(time::Duration::from_secs(1));
         screen_time_daemon(&mut program_times);
     }
@@ -143,6 +197,7 @@ fn main() -> Result<(), io::Error> {
     for (program_name, duration) in &program_times {
         println!("{}: {}", program_name, duration.as_secs());
     }
+    write_data_to_csv(&program_times, &csv_path)?;
     let read_result = read_csv("screen_time_data.csv".to_string());
     match read_result {
         Ok(_) => println!("read csv success"),
