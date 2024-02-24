@@ -1,4 +1,1 @@
-Name,Age,City
-John,25,New York
-Alice,30,Los Angeles
-Bob,28,Chicago
+timestamp,application,duration
