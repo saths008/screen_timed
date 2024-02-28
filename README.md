@@ -41,8 +41,15 @@ To test if this works, in the main() of main.rs, insert:
              println!("Error: {}", err);
          }
      }
-
 ```
 
-2. `sudo systemctl daemon-reload`
+2. Enable the daemon:
+   `sudo systemctl enable screen-timed.service`
+
+3. To reload and restart the daemon thread:
+   `sudo systemctl daemon-reload`
    `sudo systemctl restart screen-timed.service`
+4. To view logs:
+   `sudo journalctl -u screen-timed.service | less`
+   To view the status:
+   `sudo systemctl status screen-timed.service`

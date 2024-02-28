@@ -8,8 +8,10 @@ use serde_with::TimestampSeconds;
 use signal_hook::consts::signal::*;
 use signal_hook::flag as signal_flag;
 use std::collections::HashMap;
+use std::env;
 use std::error::Error;
 use std::fs::OpenOptions;
+use std::io;
 use std::io::prelude::*;
 use std::net::Shutdown;
 use std::os::unix::net::UnixListener;
@@ -20,9 +22,11 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::thread;
+use std::thread::JoinHandle;
 use std::time::{self, SystemTime};
 
 const SOCKET_PATH: &str = "/tmp/screen-time-sock";
+const ALERT_SCREEN_ENV_VAR: &str = "ALERT_SCREEN";
 
 fn close_socket() -> Result<(), Box<dyn Error>> {
     std::fs::remove_file(SOCKET_PATH)?;
@@ -45,7 +49,7 @@ fn listen_for_connections(
                 handle_client(stream, current_path, update_csv)?;
             }
             Err(err) => {
-                println!("Error: {}", err);
+                println!("Error in listen_for_connections: {}", err);
                 break;
             }
         }
@@ -53,7 +57,7 @@ fn listen_for_connections(
     Ok(())
 }
 fn create_socket() -> Result<UnixListener, Box<dyn Error>> {
-    let listener = UnixListener::bind("/tmp/screen-time-sock")?;
+    let listener = UnixListener::bind(SOCKET_PATH)?;
     Ok(listener)
 }
 fn handle_client(
@@ -64,11 +68,16 @@ fn handle_client(
     let mut received = String::new();
     stream.read_to_string(&mut received)?;
 
-    if received == "update" {
+    if received == "UPDATE_CSV" {
         println!("Received update request!");
         update_csv.store(true, Ordering::Relaxed);
+    } else if received == ALERT_SCREEN_ENV_VAR {
+        println!("Received alert screen request!");
+        let alert_screen_time = get_env_var(ALERT_SCREEN_ENV_VAR)?;
+        stream.write_all(alert_screen_time.as_bytes())?;
+        return Ok(());
     } else {
-        println!("Received invalid request! - {}", received);
+        eprintln!("Received invalid request! - {}", received);
     }
 
     let response = current_path.to_string();
@@ -102,12 +111,15 @@ fn write_data_to_csv(
 }
 fn error_notification(error_message: &str) {
     eprintln!("{}", &error_message);
-    Notification::new()
+    if let Err(err) = Notification::new()
         .summary("Error")
         .body(error_message)
         .timeout(Timeout::Never)
         .show()
-        .unwrap();
+    {
+        eprintln!("Error showing notification: {}", err);
+    }
+
     exit(1);
 }
 fn screen_time_daemon(program_times: &mut HashMap<String, time::Duration>) {
@@ -139,11 +151,63 @@ fn register_signals(program_finished: &Arc<AtomicBool>) -> Result<(), Box<dyn Er
     signal_flag::register(SIGTERM, Arc::clone(program_finished))?;
     signal_flag::register(SIGINT, Arc::clone(program_finished))?;
     signal_flag::register(SIGUSR1, Arc::clone(program_finished))?;
+    signal_flag::register(SIGUSR2, Arc::clone(program_finished))?;
     Ok(())
 }
+fn screen_time_notification(alert_screen_time: u64) {
+    let alert_message = format!(
+        "You have been on the screen for {} minutes",
+        alert_screen_time
+    );
+    if let Err(err) = Notification::new()
+        .summary("Screen Time Alert")
+        .body(alert_message.as_str())
+        .timeout(Timeout::Never)
+        .show()
+    {
+        eprintln!("Error showing notification: {}", err);
+        exit(1);
+    }
+}
+fn create_alert_screen_thread(alert_screen_time: u64) -> io::Result<JoinHandle<()>> {
+    thread::Builder::new()
+        .name("alert_screen_thread".to_string())
+        .spawn(move || {
+            if alert_screen_time == 0 {
+                return;
+            }
+            loop {
+                thread::sleep(time::Duration::from_secs(alert_screen_time * 60));
+                screen_time_notification(alert_screen_time);
+            }
+        })
+}
+fn get_env_var(env_var: &str) -> Result<String, Box<dyn Error>> {
+    let alert_screen_env_str: String = dotenvy::var(env_var)?;
+    Ok(alert_screen_env_str.trim().to_string())
+}
 fn main() -> Result<(), Box<dyn Error>> {
-    let pid = std::process::id();
-    println!("PID of the current Rust program: {}", pid);
+    dotenvy::dotenv()?;
+
+    let alert_screen_time_str = match get_env_var(ALERT_SCREEN_ENV_VAR) {
+        Ok(alert_screen_env) => alert_screen_env,
+        Err(err) => {
+            error_notification(format!("Error getting ALERT_SCREEN_ENV_VAR: {}", err).as_str());
+            exit(1);
+        }
+    };
+    let alert_screen_time: u64 = match alert_screen_time_str.parse() {
+        Ok(alert_screen_env) => alert_screen_env,
+        Err(err) => {
+            error_notification(format!("Error getting ALERT_SCREEN_ENV_VAR: {}", err).as_str());
+            exit(1);
+        }
+    };
+
+    if let Err(err) = create_alert_screen_thread(alert_screen_time) {
+        error_notification(format!("Error creating alert screen thread: {}", err).as_str());
+        exit(1);
+    }
     // When true, update csv
     let update_csv = Arc::new(AtomicBool::new(false));
     let child_update_csv = Arc::clone(&update_csv);
@@ -173,7 +237,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     };
 
-    if let Err(err) = thread::Builder::new()
+    let socket_listener_thread = match thread::Builder::new()
         .name("socket_listener_thread".to_string())
         .spawn(move || {
             let listener = match create_socket() {
@@ -202,11 +266,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                     error_notification(format!("Error closing socket: {}", err).as_str());
                 }
             }
-        })
-    {
-        error_notification(format!("Error creating socket listener thread: {}", err).as_str());
-        exit(1);
-    }
+        }) {
+        Ok(thread) => thread,
+        Err(err) => {
+            error_notification(format!("Error creating socket listener thread: {}", err).as_str());
+            exit(1);
+        }
+    };
 
     let mut program_times: HashMap<String, time::Duration> = HashMap::new();
 
@@ -269,5 +335,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             exit(1);
         }
     }
+    //Wait for socket listener thread to finish
+    if let Err(_) = socket_listener_thread.join() {
+        error_notification("Error joining socket listener thread");
+        exit(1);
+    }
+
     Ok(())
 }
