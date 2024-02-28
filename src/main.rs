@@ -5,6 +5,8 @@ use notify_rust::Timeout;
 use serde_derive::{Deserialize, Serialize};
 use serde_with::serde_as;
 use serde_with::TimestampSeconds;
+use signal_hook::consts::signal::*;
+use signal_hook::flag as signal_flag;
 use std::collections::HashMap;
 use std::error::Error;
 use std::fs::OpenOptions;
@@ -13,11 +15,11 @@ use std::net::Shutdown;
 use std::os::unix::net::UnixListener;
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
+use std::process::exit;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::thread;
-
 use std::time::{self, SystemTime};
 
 const SOCKET_PATH: &str = "/tmp/screen-time-sock";
@@ -99,14 +101,14 @@ fn write_data_to_csv(
     Ok(())
 }
 fn error_notification(error_message: &str) {
-    println!("{}", &error_message);
+    eprintln!("{}", &error_message);
     Notification::new()
         .summary("Error")
         .body(error_message)
         .timeout(Timeout::Never)
         .show()
         .unwrap();
-    std::process::exit(1);
+    exit(1);
 }
 fn screen_time_daemon(program_times: &mut HashMap<String, time::Duration>) {
     match get_active_window() {
@@ -133,6 +135,12 @@ fn screen_time_daemon(program_times: &mut HashMap<String, time::Duration>) {
     }
 }
 
+fn register_signals(program_finished: &Arc<AtomicBool>) -> Result<(), Box<dyn Error>> {
+    signal_flag::register(SIGTERM, Arc::clone(program_finished))?;
+    signal_flag::register(SIGINT, Arc::clone(program_finished))?;
+    signal_flag::register(SIGUSR1, Arc::clone(program_finished))?;
+    Ok(())
+}
 fn main() -> Result<(), Box<dyn Error>> {
     let pid = std::process::id();
     println!("PID of the current Rust program: {}", pid);
@@ -141,18 +149,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     let child_update_csv = Arc::clone(&update_csv);
 
     let program_finished = Arc::new(AtomicBool::new(false));
-    if let Err(err) =
-        signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&program_finished))
-    {
-        error_notification(format!("Exiting: Error registering SIGTERM: {}", err).as_str());
-        std::process::exit(1);
+    if let Err(err) = register_signals(&program_finished) {
+        error_notification(format!("Exiting: Error registering signals: {}", err).as_str());
+        exit(1);
     }
     let child_program_finished = Arc::clone(&program_finished);
     let current_path: PathBuf = match std::env::current_dir() {
         Ok(path) => path,
         Err(err) => {
             error_notification(format!("Exiting: Error getting current path: {}", err).as_str());
-            std::process::exit(1);
+            exit(1);
         }
     };
     let current_path_str = match current_path.to_str() {
@@ -163,36 +169,30 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         None => {
             println!("Error getting current path");
-            std::process::exit(1);
+            exit(1);
         }
     };
 
-    thread::Builder::new()
+    if let Err(err) = thread::Builder::new()
         .name("socket_listener_thread".to_string())
         .spawn(move || {
             let listener = match create_socket() {
                 Ok(listener) => listener,
                 Err(err) => {
                     error_notification(format!("Error creating socket: {}", err).as_str());
-                    std::process::exit(1);
+                    exit(1);
                 }
             };
-            match listen_for_connections(
+            if let Err(err) = listen_for_connections(
                 &listener,
                 &child_program_finished,
                 &current_path_str,
                 &child_update_csv,
             ) {
-                Ok(()) => {
-                    println!("Finished listening for connections!");
-                }
-                Err(err) => {
-                    error_notification(
-                        format!("Error listening for connections: {}", err).as_str(),
-                    );
-                    std::process::exit(1);
-                }
+                error_notification(format!("Error listening for connections: {}", err).as_str());
+                exit(1);
             }
+            println!("Finished listening for connections.");
 
             match close_socket() {
                 Ok(()) => {
@@ -202,8 +202,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                     error_notification(format!("Error closing socket: {}", err).as_str());
                 }
             }
-            println!("Socket closed!");
-        })?;
+        })
+    {
+        error_notification(format!("Error creating socket listener thread: {}", err).as_str());
+        exit(1);
+    }
 
     let mut program_times: HashMap<String, time::Duration> = HashMap::new();
 
@@ -229,8 +232,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         screen_time_daemon(&mut program_times);
     }
 
-    println!("SIGTERM received!");
-    let mut stream = UnixStream::connect(SOCKET_PATH)?;
+    println!("Signal received!");
+    let mut stream = match UnixStream::connect(SOCKET_PATH) {
+        Ok(stream) => stream,
+        Err(err) => {
+            error_notification(format!("Error connecting to socket: {}", err).as_str());
+            exit(1);
+        }
+    };
     match stream.write_all(b"Terminating Stream") {
         Ok(()) => {
             println!("Terminating stream sent.");
@@ -257,7 +266,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         Err(err) => {
             error_notification(format!("Error writing to csv: {}", err).as_str());
-            std::process::exit(1);
+            exit(1);
         }
     }
     Ok(())
