@@ -1,4 +1,5 @@
 use active_win_pos_rs::get_active_window;
+use csv::ReaderBuilder;
 use csv::WriterBuilder;
 use notify_rust::Notification;
 use notify_rust::Timeout;
@@ -10,6 +11,7 @@ use signal_hook::flag as signal_flag;
 use std::collections::HashMap;
 use std::env;
 use std::error::Error;
+use std::fs;
 use std::fs::OpenOptions;
 use std::io;
 use std::io::prelude::*;
@@ -23,13 +25,51 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
+use std::time::UNIX_EPOCH;
 use std::time::{self, SystemTime};
 
 const SOCKET_PATH: &str = "/tmp/screen-time-sock";
 const ALERT_SCREEN_ENV_VAR: &str = "ALERT_SCREEN";
+const SCREEN_DATA_CSV_PATH: &str = "screen_time_data.csv";
 
+fn remove_old_data(months: u32) -> Result<(), Box<dyn Error>> {
+    let backup_screen_csv_path = format!("backup_{}", SCREEN_DATA_CSV_PATH);
+    fs::copy(SCREEN_DATA_CSV_PATH, &backup_screen_csv_path)?;
+    let new_screen_csv_path = format!("new_{}", SCREEN_DATA_CSV_PATH);
+
+    fs::File::create(&new_screen_csv_path)?;
+    let mut rdr = ReaderBuilder::new().from_path(&backup_screen_csv_path)?;
+    let mut wtr = WriterBuilder::new()
+        .has_headers(true)
+        .from_path(&new_screen_csv_path);
+
+    let mut rdr_iter = rdr.deserialize();
+    let first_result_iter = rdr_iter.next();
+    if first_result_iter.is_none() {
+        return Ok(());
+    }
+    let first_result: Row = first_result_iter.unwrap()?;
+    let first_timestamp = first_result.timestamp.duration_since(UNIX_EPOCH)?;
+    // 30 days approximation in a month
+    let end_timestamp =
+        first_timestamp + time::Duration::from_secs((60 * 60 * 24 * 30 * months).into());
+    for result in rdr_iter {
+        let record: Row = result?;
+        let timestamp = record.timestamp.duration_since(UNIX_EPOCH)?;
+        let should_delete = timestamp >= first_timestamp && timestamp <= end_timestamp;
+        if !should_delete {
+            wtr.serialize(record)?;
+        }
+    }
+    wtr.flush()?;
+    //replace old csv with new csv
+    fs::rename(new_screen_csv_path, SCREEN_DATA_CSV_PATH)?;
+    fs::remove_file(backup_screen_csv_path)?;
+    println!("Successfully removed {} months old data", months);
+    Ok(())
+}
 fn close_socket() -> Result<(), Box<dyn Error>> {
-    std::fs::remove_file(SOCKET_PATH)?;
+    fs::remove_file(SOCKET_PATH)?;
     Ok(())
 }
 
@@ -76,6 +116,25 @@ fn handle_client(
         let alert_screen_time = get_env_var(ALERT_SCREEN_ENV_VAR)?;
         stream.write_all(alert_screen_time.as_bytes())?;
         return Ok(());
+    } else if received.len() >= 7 && (received[..6].to_string() == "DELETE") {
+        println!("Received delete request!");
+        let months_str = received[7..].trim().to_string();
+        let months: u32 = match months_str.parse() {
+            Ok(months) => months,
+            Err(err) => {
+                eprintln!("Error parsing months: {}", err);
+                stream.write_all(b"Failure")?;
+                return Ok(());
+            }
+        };
+        if let Err(err) = remove_old_data(months) {
+            eprintln!("Error removing old data: {}", err);
+            stream.write_all(b"Failure")?;
+        } else {
+            stream.write_all(b"Success")?;
+            println!("Successfully removed old data!");
+        }
+        return Ok(());
     } else {
         eprintln!("Received invalid request! - {}", received);
     }
@@ -86,11 +145,12 @@ fn handle_client(
 }
 
 #[serde_as]
-#[derive(Deserialize, Serialize)]
-struct Row<'a> {
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct Row {
     #[serde_as(as = "TimestampSeconds<i64>")]
     timestamp: SystemTime,
-    application: &'a str,
+    application: String,
+    //How long in seconds the application was active
     duration: u64,
 }
 fn write_data_to_csv(
@@ -102,7 +162,7 @@ fn write_data_to_csv(
     for (program_name, duration) in program_times {
         wtr.serialize(Row {
             timestamp: SystemTime::now(),
-            application: program_name,
+            application: program_name.to_string(),
             duration: duration.as_secs(),
         })?;
     }
@@ -218,7 +278,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         exit(1);
     }
     let child_program_finished = Arc::clone(&program_finished);
-    let current_path: PathBuf = match std::env::current_dir() {
+    let current_path: PathBuf = match env::current_dir() {
         Ok(path) => path,
         Err(err) => {
             error_notification(format!("Exiting: Error getting current path: {}", err).as_str());
@@ -228,7 +288,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let current_path_str = match current_path.to_str() {
         Some(path) => {
             let mut full_path = path.to_string();
-            full_path.push_str("/screen_time_data.csv");
+            full_path.push_str(format!("/{}", SCREEN_DATA_CSV_PATH.to_string()).as_str());
             Arc::new(full_path)
         }
         None => {
@@ -276,7 +336,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut program_times: HashMap<String, time::Duration> = HashMap::new();
 
-    let csv_path = "screen_time_data.csv".to_string();
+    let csv_path = SCREEN_DATA_CSV_PATH.to_string();
     // 1, 0 ->  1 - run screen_time_daemon
     // 0, 1 ->  1 -  break
     // 0, 0 -> 0 - break
@@ -340,6 +400,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         error_notification("Error joining socket listener thread");
         exit(1);
     }
+    println!("Successfully exiting...");
 
     Ok(())
 }
