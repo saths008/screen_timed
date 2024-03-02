@@ -41,7 +41,7 @@ fn remove_old_data(months: u32) -> Result<(), Box<dyn Error>> {
     let mut rdr = ReaderBuilder::new().from_path(&backup_screen_csv_path)?;
     let mut wtr = WriterBuilder::new()
         .has_headers(true)
-        .from_path(&new_screen_csv_path);
+        .from_path(&new_screen_csv_path)?;
 
     let mut rdr_iter = rdr.deserialize();
     let first_result_iter = rdr_iter.next();
