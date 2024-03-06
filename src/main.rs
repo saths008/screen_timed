@@ -135,6 +135,20 @@ fn handle_client(
             println!("Successfully removed old data!");
         }
         return Ok(());
+    } else if received == "PATH" {
+        let path = env::current_dir()?;
+        let mut path_str = match path.to_str() {
+            Some(path) => path.to_string(),
+            None => {
+                eprintln!("Error getting current path");
+                stream.write_all(b"Failure")?;
+                return Ok(());
+            }
+        };
+        path_str.push_str(format!("/{}", SCREEN_DATA_CSV_PATH.to_string()).as_str());
+        stream.write_all(path_str.as_bytes())?;
+        println!("Sent path! - {}", path_str);
+        return Ok(());
     } else {
         eprintln!("Received invalid request! - {}", received);
     }
