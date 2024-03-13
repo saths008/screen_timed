@@ -95,7 +95,7 @@ fn handle_client(
             Ok(())
         }
         s if s == path_str => {
-            let curr_path = get_curr_path_to_csv();
+            let curr_path = get_curr_path_to_csv(&SCREEN_DATA_CSV_PATH.to_string());
             stream.write_all(curr_path.as_bytes())?;
             println!("Sent path! - {}", curr_path);
             Ok(())

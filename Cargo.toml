@@ -17,3 +17,5 @@ dotenvy = "0.15.7"
 
 [dev-dependencies]
 rand = "0.8.5"
+tempfile = "3.10.1"
+serial_test = "3.0.0"

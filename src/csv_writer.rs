@@ -14,7 +14,6 @@ use std::{
 };
 
 use crate::notification::exit_with_error_notification;
-use crate::SCREEN_DATA_CSV_PATH;
 
 #[serde_as]
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -25,7 +24,7 @@ pub struct Row {
     //How long in seconds the application was active
     duration: u64,
 }
-pub fn get_curr_path_to_csv() -> String {
+pub fn get_curr_path_to_csv(csv_path: &String) -> String {
     let current_path: PathBuf = match env::current_dir() {
         Ok(path) => path,
         Err(err) => {
@@ -37,7 +36,7 @@ pub fn get_curr_path_to_csv() -> String {
     let current_path_str = match current_path.to_str() {
         Some(path) => {
             let mut full_path = path.to_string();
-            full_path.push_str(format!("/{}", SCREEN_DATA_CSV_PATH.to_string()).as_str());
+            full_path.push_str(format!("/{}", csv_path).as_str());
             full_path
         }
         None => {
@@ -46,12 +45,11 @@ pub fn get_curr_path_to_csv() -> String {
     };
     current_path_str
 }
-
 pub fn write_data_to_csv(
     program_times: &HashMap<String, time::Duration>,
-    csv_path: &String,
+    csv_name: &String,
 ) -> Result<(), Box<dyn Error>> {
-    let file = OpenOptions::new().append(true).open(csv_path)?;
+    let file = OpenOptions::new().append(true).open(csv_name)?;
     let mut wtr = WriterBuilder::new().has_headers(false).from_writer(file);
     for (program_name, duration) in program_times {
         wtr.serialize(Row {
@@ -64,16 +62,16 @@ pub fn write_data_to_csv(
     Ok(())
 }
 
-pub fn remove_old_data(months: u32, csv_path: &String) -> Result<(), Box<dyn Error>> {
-    let backup_screen_csv_path = format!("backup_{}", csv_path);
-    copy(SCREEN_DATA_CSV_PATH, &backup_screen_csv_path)?;
-    let new_screen_csv_path = format!("new_{}", csv_path);
+pub fn remove_old_data(months: u32, csv_name: &String) -> Result<(), Box<dyn Error>> {
+    let backup_screen_csv_name = format!("backup_{}", csv_name);
+    copy(csv_name, &backup_screen_csv_name)?;
+    let new_screen_csv_name = format!("new_{}", csv_name);
 
-    File::create(&new_screen_csv_path)?;
-    let mut rdr = ReaderBuilder::new().from_path(&backup_screen_csv_path)?;
+    File::create(&new_screen_csv_name)?;
+    let mut rdr = ReaderBuilder::new().from_path(&backup_screen_csv_name)?;
     let mut wtr = WriterBuilder::new()
         .has_headers(true)
-        .from_path(&new_screen_csv_path)?;
+        .from_path(&new_screen_csv_name)?;
 
     let mut rdr_iter = rdr.deserialize();
     let first_result_iter = rdr_iter.next();
@@ -95,8 +93,94 @@ pub fn remove_old_data(months: u32, csv_path: &String) -> Result<(), Box<dyn Err
     }
     wtr.flush()?;
     //replace old csv with new csv
-    rename(new_screen_csv_path, SCREEN_DATA_CSV_PATH)?;
-    remove_file(backup_screen_csv_path)?;
+    rename(new_screen_csv_name, csv_name)?;
+    remove_file(backup_screen_csv_name)?;
     println!("Successfully removed {} months old data", months);
     Ok(())
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serial_test::serial;
+    use tempfile;
+    const CSV_NAME: &str = "screen_time_data.csv";
+
+    //helper to read csv
+    fn read_csv(csv_path: &String) -> Result<Vec<Row>, Box<dyn Error>> {
+        let mut rdr = ReaderBuilder::new().from_path(csv_path)?;
+        let mut records: Vec<Row> = Vec::new();
+        for result in rdr.deserialize() {
+            let record: Row = result?;
+            records.push(record);
+        }
+        Ok(records)
+    }
+
+    fn write_header_to_csv(csv_path: &String) -> Result<(), Box<dyn Error>> {
+        let file = OpenOptions::new().write(true).create(true).open(csv_path)?;
+        let mut wtr = WriterBuilder::new().has_headers(true).from_writer(file);
+        wtr.serialize(Row {
+            timestamp: SystemTime::now(),
+            application: "Application".to_string(),
+            duration: 0,
+        })?;
+        wtr.flush()?;
+        Ok(())
+    }
+
+    fn create_and_set_temp_dir() -> tempfile::TempDir {
+        let temp_dir = tempfile::tempdir().expect("Failed to create temporary directory");
+        env::set_current_dir(&temp_dir).expect("Failed to set current directory");
+        temp_dir
+    }
+    fn setup() -> (tempfile::TempDir, String) {
+        let temp_dir = create_and_set_temp_dir();
+        let csv_name = CSV_NAME.to_string();
+        let actual_path_to_csv = String::from(temp_dir.path().join(&csv_name).to_str().unwrap());
+        println!("actual_path_to_csv: {}", actual_path_to_csv);
+
+        (temp_dir, actual_path_to_csv)
+    }
+    #[test]
+    #[serial]
+    fn test_get_curr_path_to_csv() {
+        //temp_dir is dropped when out of scope and deletes the temp dir
+        let (_temp_dir, actual_path_to_csv) = setup();
+        let csv_name = CSV_NAME.to_string();
+        println!("In test_get_curr_path_to_csv");
+        let path_to_csv = get_curr_path_to_csv(&csv_name);
+        println!("path_to_csv: {}", path_to_csv);
+        println!("expected_path: {}", actual_path_to_csv);
+        assert_eq!(path_to_csv, actual_path_to_csv);
+    }
+
+    #[test]
+    #[serial]
+    fn test_write_headers_to_csv() {
+        let (_temp_dir, actual_path_to_csv) = setup();
+        write_header_to_csv(&actual_path_to_csv).unwrap();
+        let rows_vector = read_csv(&actual_path_to_csv).unwrap();
+        println!("rows_vector[0]: {:?}", rows_vector[0]);
+        assert_eq!(rows_vector.len(), 1);
+        assert_eq!(rows_vector[0].application, "Application");
+        assert_eq!(rows_vector[0].duration, 0);
+    }
+
+    #[test]
+    #[serial]
+    fn test_write_data_to_csv() {
+        let (_temp_dir, actual_path_to_csv) = setup();
+        write_header_to_csv(&actual_path_to_csv).unwrap();
+        let mut program_times: HashMap<String, time::Duration> = HashMap::new();
+        program_times.insert("Test".to_string(), time::Duration::from_secs(10));
+        write_data_to_csv(&program_times, &CSV_NAME.to_string()).unwrap();
+        let rows_vector = read_csv(&actual_path_to_csv).unwrap();
+
+        println!("rows_vector: {:?}", rows_vector);
+        assert_eq!(rows_vector.len(), 2);
+        assert_eq!(rows_vector[0].application, "Application");
+        assert_eq!(rows_vector[0].duration, 0);
+        assert_eq!(rows_vector[1].application, "Test");
+        assert_eq!(rows_vector[1].duration, 10);
+    }
 }
