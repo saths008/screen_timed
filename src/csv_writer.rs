@@ -62,6 +62,7 @@ pub fn write_data_to_csv(
     Ok(())
 }
 
+//Removes one month of the oldest data
 pub fn remove_old_data(months: u32, csv_name: &String) -> Result<(), Box<dyn Error>> {
     let backup_screen_csv_name = format!("backup_{}", csv_name);
     copy(csv_name, &backup_screen_csv_name)?;
@@ -100,6 +101,8 @@ pub fn remove_old_data(months: u32, csv_name: &String) -> Result<(), Box<dyn Err
 }
 #[cfg(test)]
 mod tests {
+    use std::{io::Write, time::Duration};
+
     use super::*;
     use serial_test::serial;
     use tempfile;
@@ -116,11 +119,11 @@ mod tests {
         Ok(records)
     }
 
-    fn write_header_to_csv(csv_path: &String) -> Result<(), Box<dyn Error>> {
+    fn write_header_to_csv(csv_path: &String, timestamp: SystemTime) -> Result<(), Box<dyn Error>> {
         let file = OpenOptions::new().write(true).create(true).open(csv_path)?;
         let mut wtr = WriterBuilder::new().has_headers(true).from_writer(file);
         wtr.serialize(Row {
-            timestamp: SystemTime::now(),
+            timestamp,
             application: "Application".to_string(),
             duration: 0,
         })?;
@@ -133,11 +136,19 @@ mod tests {
         env::set_current_dir(&temp_dir).expect("Failed to set current directory");
         temp_dir
     }
+    fn create_env_file(temp_dir: &tempfile::TempDir) {
+        let env_file_path = temp_dir.path().join(".env");
+        let mut file = File::create(&env_file_path).expect("Failed to create .env file");
+
+        file.write_all(b"ALERT_SCREEN=45\n")
+            .expect("Failed to write to .env file");
+    }
     fn setup() -> (tempfile::TempDir, String) {
         let temp_dir = create_and_set_temp_dir();
         let csv_name = CSV_NAME.to_string();
         let actual_path_to_csv = String::from(temp_dir.path().join(&csv_name).to_str().unwrap());
         println!("actual_path_to_csv: {}", actual_path_to_csv);
+        create_env_file(&temp_dir);
 
         (temp_dir, actual_path_to_csv)
     }
@@ -158,7 +169,7 @@ mod tests {
     #[serial]
     fn test_write_headers_to_csv() {
         let (_temp_dir, actual_path_to_csv) = setup();
-        write_header_to_csv(&actual_path_to_csv).unwrap();
+        write_header_to_csv(&actual_path_to_csv, SystemTime::now()).unwrap();
         let rows_vector = read_csv(&actual_path_to_csv).unwrap();
         println!("rows_vector[0]: {:?}", rows_vector[0]);
         assert_eq!(rows_vector.len(), 1);
@@ -170,7 +181,7 @@ mod tests {
     #[serial]
     fn test_write_data_to_csv() {
         let (_temp_dir, actual_path_to_csv) = setup();
-        write_header_to_csv(&actual_path_to_csv).unwrap();
+        write_header_to_csv(&actual_path_to_csv, SystemTime::now()).unwrap();
         let mut program_times: HashMap<String, time::Duration> = HashMap::new();
         program_times.insert("Test".to_string(), time::Duration::from_secs(10));
         write_data_to_csv(&program_times, &CSV_NAME.to_string()).unwrap();
@@ -182,5 +193,48 @@ mod tests {
         assert_eq!(rows_vector[0].duration, 0);
         assert_eq!(rows_vector[1].application, "Test");
         assert_eq!(rows_vector[1].duration, 10);
+    }
+
+    #[test]
+    #[serial]
+    fn test_remove_all_data() {
+        let (_temp_dir, actual_path_to_csv) = setup();
+        write_header_to_csv(&actual_path_to_csv, SystemTime::now()).unwrap();
+        let mut program_times: HashMap<String, time::Duration> = HashMap::new();
+        program_times.insert("Test".to_string(), time::Duration::from_secs(10));
+        write_data_to_csv(&program_times, &CSV_NAME.to_string()).unwrap();
+        let mut rows_vector = read_csv(&actual_path_to_csv).unwrap();
+        assert_eq!(rows_vector.len(), 2);
+
+        //Remove the oldest month of data, which deletes everything
+        remove_old_data(1, &CSV_NAME.to_string()).unwrap();
+        rows_vector = read_csv(&actual_path_to_csv).unwrap();
+
+        println!("rows_vector after removal: {:?}", rows_vector);
+        assert_eq!(rows_vector.len(), 0);
+    }
+    #[test]
+    #[serial]
+    fn test_remove_one_month_data() {
+        let (_temp_dir, actual_path_to_csv) = setup();
+        let now = SystemTime::now();
+        let one_month = Duration::from_secs(60 * 60 * 24 * 30);
+        let two_months_ago = now.checked_sub(2 * one_month).unwrap();
+        write_header_to_csv(&actual_path_to_csv, two_months_ago).unwrap();
+
+        let mut program_times: HashMap<String, time::Duration> = HashMap::new();
+        program_times.insert("Test".to_string(), time::Duration::from_secs(10));
+        write_data_to_csv(&program_times, &CSV_NAME.to_string()).unwrap();
+
+        let mut rows_vector = read_csv(&actual_path_to_csv).unwrap();
+        assert_eq!(rows_vector.len(), 2);
+
+        remove_old_data(1, &CSV_NAME.to_string()).unwrap();
+        rows_vector = read_csv(&actual_path_to_csv).unwrap();
+
+        println!("rows_vector after removal: {:?}", rows_vector);
+        assert_eq!(rows_vector.len(), 1);
+        assert_eq!(rows_vector[0].application, "Test");
+        assert_eq!(rows_vector[0].duration, 10);
     }
 }
