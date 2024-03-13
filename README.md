@@ -10,10 +10,11 @@ Data is processed and viewable through the [screen-time-app](https://github.com/
 ## Set up
 
 1. [Install Rust and cargo](https://www.rust-lang.org/tools/install)
+2. Create a `screen_time_data.csv` in the root.
 
 ### Setting up the linux daemon:
 
-2. If you are using x11 (find out by doing `echo $XDG_SESSION_TYPE`):
+2. This has been tested on Wayland and x11, (find out by doing `echo $XDG_SESSION_TYPE`):
 
 3. Create a screen-timed.service in /etc/systemd/system/ with content:
 
@@ -36,7 +37,7 @@ Environment=DISPLAY=:1, replace :1 with whatever the output of `echo $DISPLAY` g
 4. To test if this works, in the main() of main.rs, insert:
 
 ```rust
-    // should open up xclock which uses x11.
+    // should open up xclock, most linux distros have it installed
      match Command::new("xclock").output() {
          Ok(output) => {
              println!("output: {:?}", output);
