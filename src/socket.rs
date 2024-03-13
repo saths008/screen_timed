@@ -49,7 +49,6 @@ pub fn send_terminating_mssg() {
 pub fn listen_for_connections(
     listener: &UnixListener,
     terminating_arc: &Arc<AtomicBool>,
-    current_path: &Arc<String>,
     update_csv: &Arc<AtomicBool>,
     alert_screen_time: u64,
 ) -> Result<(), Box<dyn Error>> {
@@ -60,7 +59,7 @@ pub fn listen_for_connections(
         match stream {
             Ok(stream) => {
                 println!("new client!");
-                handle_client(stream, current_path, update_csv, alert_screen_time)?;
+                handle_client(stream, update_csv, alert_screen_time)?;
             }
             Err(err) => {
                 println!("Error in listen_for_connections: {}", err);
@@ -72,7 +71,6 @@ pub fn listen_for_connections(
 }
 fn handle_client(
     mut stream: UnixStream,
-    current_path: &Arc<String>,
     update_csv: &Arc<AtomicBool>,
     alert_screen_time: u64,
 ) -> Result<(), Box<dyn Error>> {
@@ -80,27 +78,28 @@ fn handle_client(
     stream.read_to_string(&mut received)?;
     let update_csv_str = String::from("UPDATE_CSV");
     let path_str = String::from("PATH");
+    let alert_screen_env_var_str = ALERT_SCREEN_ENV_VAR.to_string();
     match received {
-        update_csv_str => {
+        s if s == update_csv_str => {
             println!("Received update request!");
             update_csv.store(true, Ordering::Relaxed);
             stream.write_all(b"Success")?;
             Ok(())
         }
-        path_str => {
+        s if s == path_str => {
             let curr_path = get_curr_path();
             stream.write_all(curr_path.as_bytes())?;
             println!("Sent path! - {}", curr_path);
             Ok(())
         }
-        ALERT_SCREEN_ENV_VAR => {
+        s if s == alert_screen_env_var_str => {
             println!("Received alert screen request!");
             stream.write_all(alert_screen_time.to_string().as_bytes())?;
             Ok(())
         }
-        _ if received.len() >= 7 && &received[..6] == "DELETE" => {
+        s if (received.len() >= 7) && (&received[..6] == "DELETE") => {
             println!("Received delete request!");
-            let months_str = received[7..].trim().to_string();
+            let months_str = s[7..].trim().to_string();
             let months: u32 = match months_str.parse() {
                 Ok(months) => months,
                 Err(err) => {

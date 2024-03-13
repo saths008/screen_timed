@@ -1,4 +1,4 @@
-use std::{env, path::PathBuf, string::String, sync::Arc};
+use std::{env, path::PathBuf, string::String};
 
 use crate::SCREEN_DATA_CSV_PATH;
 use crate::{notification::exit_with_error_notification, ALERT_SCREEN_ENV_VAR};
@@ -42,7 +42,8 @@ pub fn get_curr_path() -> String {
     let current_path_str = match current_path.to_str() {
         Some(path) => {
             let mut full_path = path.to_string();
-            full_path.push_str(format!("/{}", SCREEN_DATA_CSV_PATH.to_string()).as_str())
+            full_path.push_str(format!("/{}", SCREEN_DATA_CSV_PATH.to_string()).as_str());
+            full_path
         }
         None => {
             exit_with_error_notification("Error getting the current path!");

@@ -1,4 +1,4 @@
-use config::{get_curr_path, new_config};
+use config::new_config;
 use csv_writer::write_data_to_csv;
 use notification::{exit_with_error_notification, screen_time_notification};
 use screen_time::update_current_app;
@@ -41,12 +41,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     register_os_signals(&program_finished);
 
     let child_program_finished = Arc::clone(&program_finished);
-    let curr_path_str = get_curr_path();
-    let curr_path = Arc::new(curr_path_str);
 
     let socket_listener_thread = match create_socket_listener_thread(
         Arc::clone(&child_program_finished),
-        Arc::clone(&curr_path),
         Arc::clone(&child_update_csv),
         alert_screen_time,
     ) {

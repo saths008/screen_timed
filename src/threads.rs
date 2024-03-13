@@ -23,7 +23,6 @@ pub fn create_alert_screen_thread(alert_screen_time: u64) -> io::Result<JoinHand
 }
 pub fn create_socket_listener_thread(
     child_program_finished: Arc<AtomicBool>,
-    current_path_str: Arc<String>,
     child_update_csv: Arc<AtomicBool>,
     alert_screen_time: u64,
 ) -> Result<JoinHandle<()>, Box<dyn Error>> {
@@ -41,7 +40,6 @@ pub fn create_socket_listener_thread(
             if let Err(err) = listen_for_connections(
                 &listener,
                 &child_program_finished,
-                &current_path_str,
                 &child_update_csv,
                 alert_screen_time,
             ) {
