@@ -61,3 +61,54 @@ pub fn create_socket_listener_thread(
     };
     Ok(socket_listener_thread)
 }
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use crate::socket::{connect_to_socket, send_terminating_mssg};
+    use crate::test_helpers::tests::{get_socket_path, setup};
+    use serial_test::serial;
+    use std::io::{Read, Write};
+    use std::net::Shutdown;
+    use std::path::Path;
+    use std::sync::atomic::Ordering;
+
+    #[test]
+    #[serial]
+    fn test_create_socket_listener_thread() {
+        let (temp_dir, expected_csv_path) = setup();
+        let socket_path = get_socket_path(&temp_dir);
+
+        let child_program_finished = Arc::new(AtomicBool::new(false));
+        let child_update_csv = Arc::new(AtomicBool::new(false));
+        let alert_screen_time = 45;
+        //creates socket, listens for connections, and closes socket
+        let socket_listener_thread = create_socket_listener_thread(
+            child_program_finished.clone(),
+            child_update_csv,
+            alert_screen_time,
+            socket_path.clone(),
+        )
+        .unwrap();
+        //Wait for socket_listener_thread to set up
+        std::thread::sleep(std::time::Duration::from_secs(3));
+
+        let mut stream = connect_to_socket(socket_path.clone());
+        stream.write_all(b"PATH").unwrap();
+        stream.shutdown(Shutdown::Write).unwrap();
+        println!("Sent PATH request!");
+        let mut received = String::new();
+        stream.read_to_string(&mut received).unwrap();
+        println!("received: {}", received);
+        stream.shutdown(Shutdown::Read).unwrap();
+
+        send_terminating_mssg(socket_path.clone());
+        //terminate socket_listener_thread
+        child_program_finished.store(true, Ordering::Relaxed);
+        assert_eq!(received, expected_csv_path);
+        socket_listener_thread.join().unwrap();
+
+        //if socket is closed, it does not exist
+        assert!(!Path::new(&socket_path).exists());
+    }
+}

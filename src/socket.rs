@@ -23,7 +23,7 @@ pub fn close_socket(socket_path: &String) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn connect_to_socket(socket_path: String) -> UnixStream {
+pub fn connect_to_socket(socket_path: String) -> UnixStream {
     let stream = match UnixStream::connect(socket_path) {
         Ok(stream) => stream,
         Err(err) => {
@@ -89,12 +89,13 @@ fn handle_client(
     let alert_screen_env_var_str = ALERT_SCREEN_ENV_VAR.to_string();
     match received {
         s if s == update_csv_str => {
-            println!("Received update request!");
+            println!("Received UPDATE_CSV request!");
             update_csv.store(true, Ordering::Relaxed);
             stream.write_all(b"Success")?;
             Ok(())
         }
         s if s == path_str => {
+            println!("Received PATH request!");
             let curr_path = get_curr_path_to_csv(&SCREEN_DATA_CSV_PATH.to_string());
             stream.write_all(curr_path.as_bytes())?;
             println!("Sent path! - {}", curr_path);
@@ -138,21 +139,10 @@ fn handle_client(
 mod tests {
 
     use super::*;
-    use crate::test_helpers::tests::setup;
+    use crate::test_helpers::tests::{get_socket_path, setup};
     use serial_test::serial;
     use std::path::Path;
 
-    const SOCKET_NAME: &str = "screen-time-sock";
-
-    fn get_socket_path(temp_dir: &tempfile::TempDir) -> String {
-        String::from(
-            temp_dir
-                .path()
-                .join(&SOCKET_NAME.to_string())
-                .to_str()
-                .unwrap(),
-        )
-    }
     #[test]
     #[serial]
     fn test_create_socket() {

@@ -4,6 +4,17 @@ pub mod tests {
 
     use tempfile;
     pub const CSV_NAME: &str = "screen_time_data.csv";
+    pub const SOCKET_NAME: &str = "screen-time-sock";
+
+    pub fn get_socket_path(temp_dir: &tempfile::TempDir) -> String {
+        String::from(
+            temp_dir
+                .path()
+                .join(&SOCKET_NAME.to_string())
+                .to_str()
+                .unwrap(),
+        )
+    }
 
     fn create_and_set_temp_dir() -> tempfile::TempDir {
         let temp_dir = tempfile::tempdir().expect("Failed to create temporary directory");
