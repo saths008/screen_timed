@@ -30,7 +30,7 @@ impl Config {
     }
 }
 
-pub fn get_curr_path() -> Arc<String> {
+pub fn get_curr_path() -> String {
     let current_path: PathBuf = match env::current_dir() {
         Ok(path) => path,
         Err(err) => {
@@ -42,8 +42,7 @@ pub fn get_curr_path() -> Arc<String> {
     let current_path_str = match current_path.to_str() {
         Some(path) => {
             let mut full_path = path.to_string();
-            full_path.push_str(format!("/{}", SCREEN_DATA_CSV_PATH.to_string()).as_str());
-            Arc::new(full_path)
+            full_path.push_str(format!("/{}", SCREEN_DATA_CSV_PATH.to_string()).as_str())
         }
         None => {
             exit_with_error_notification("Error getting the current path!");

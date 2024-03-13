@@ -1,3 +1,4 @@
+use crate::config::get_curr_path;
 use crate::csv_writer::remove_old_data;
 use crate::notification::exit_with_error_notification;
 use crate::{ALERT_SCREEN_ENV_VAR, SOCKET_PATH};
@@ -77,44 +78,52 @@ fn handle_client(
 ) -> Result<(), Box<dyn Error>> {
     let mut received = String::new();
     stream.read_to_string(&mut received)?;
-
-    if received == "UPDATE_CSV" {
-        println!("Received update request!");
-        update_csv.store(true, Ordering::Relaxed);
-        let response = current_path.to_string();
-        stream.write_all(response.as_bytes())?;
-        return Ok(());
-    }
-    if received == ALERT_SCREEN_ENV_VAR {
-        println!("Received alert screen request!");
-        stream.write_all(alert_screen_time.to_string().as_bytes())?;
-        return Ok(());
-    }
-    if received.len() >= 7 && (received[..6].to_string() == "DELETE") {
-        println!("Received delete request!");
-        let months_str = received[7..].trim().to_string();
-        let months: u32 = match months_str.parse() {
-            Ok(months) => months,
-            Err(err) => {
-                eprintln!("Error parsing months: {}", err);
-                stream.write_all(b"Failure")?;
-                return Ok(());
-            }
-        };
-        match remove_old_data(months) {
-            Ok(()) => {
-                println!("Successfully removed old data!");
-                stream.write_all(b"Success")?;
-            }
-            Err(err) => {
-                eprintln!("Error removing old data: {}", err);
-                stream.write_all(b"Failure")?;
-            }
+    let update_csv_str = String::from("UPDATE_CSV");
+    let path_str = String::from("PATH");
+    match received {
+        update_csv_str => {
+            println!("Received update request!");
+            update_csv.store(true, Ordering::Relaxed);
+            stream.write_all(b"Success")?;
+            Ok(())
         }
-        return Ok(());
+        path_str => {
+            let curr_path = get_curr_path();
+            stream.write_all(curr_path.as_bytes())?;
+            println!("Sent path! - {}", curr_path);
+            Ok(())
+        }
+        ALERT_SCREEN_ENV_VAR => {
+            println!("Received alert screen request!");
+            stream.write_all(alert_screen_time.to_string().as_bytes())?;
+            Ok(())
+        }
+        _ if received.len() >= 7 && &received[..6] == "DELETE" => {
+            println!("Received delete request!");
+            let months_str = received[7..].trim().to_string();
+            let months: u32 = match months_str.parse() {
+                Ok(months) => months,
+                Err(err) => {
+                    eprintln!("Error parsing months: {}", err);
+                    stream.write_all(b"Failure")?;
+                    return Ok(());
+                }
+            };
+            match remove_old_data(months) {
+                Ok(()) => {
+                    stream.write_all(b"Success")?;
+                    println!("Successfully removed old data!");
+                }
+                Err(err) => {
+                    eprintln!("Error removing old data: {}", err);
+                    stream.write_all(b"Failure")?;
+                }
+            }
+            Ok(())
+        }
+        _ => {
+            println!("Received unknown request: {}", received);
+            Ok(())
+        }
     }
-    eprintln!("Received invalid request! - {}", received);
-    let response = current_path.to_string();
-    stream.write_all(response.as_bytes())?;
-    Ok(())
 }
