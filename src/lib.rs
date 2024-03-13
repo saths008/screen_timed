@@ -19,6 +19,7 @@ mod notification;
 mod screen_time;
 mod signals;
 mod socket;
+mod test_helpers;
 mod threads;
 
 const SOCKET_PATH: &str = "/tmp/screen-time-sock";

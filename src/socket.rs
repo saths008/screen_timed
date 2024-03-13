@@ -134,3 +134,46 @@ fn handle_client(
         }
     }
 }
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use crate::test_helpers::tests::setup;
+    use serial_test::serial;
+    use std::path::Path;
+
+    const SOCKET_NAME: &str = "screen-time-sock";
+
+    fn get_socket_path(temp_dir: &tempfile::TempDir) -> String {
+        String::from(
+            temp_dir
+                .path()
+                .join(&SOCKET_NAME.to_string())
+                .to_str()
+                .unwrap(),
+        )
+    }
+    #[test]
+    #[serial]
+    fn test_create_socket() {
+        let (temp_dir, _) = setup();
+        let socket_path = get_socket_path(&temp_dir);
+        create_socket(&socket_path);
+        //if socket is created, it exists
+        assert!(Path::new(&socket_path).exists());
+        //temp_dir out of scope, socket is cleaned up
+    }
+
+    #[test]
+    #[serial]
+    fn test_create_socket_and_close_socket() {
+        let (temp_dir, _) = setup();
+        let socket_path = get_socket_path(&temp_dir);
+        create_socket(&socket_path);
+        //if socket is created, it exists
+        assert!(Path::new(&socket_path).exists());
+        close_socket(&socket_path).unwrap();
+        //if socket is closed, it does not exist
+        assert!(!Path::new(&socket_path).exists());
+    }
+}
