@@ -25,18 +25,12 @@ pub fn create_socket_listener_thread(
     child_program_finished: Arc<AtomicBool>,
     child_update_csv: Arc<AtomicBool>,
     alert_screen_time: u64,
+    socket_path: String,
 ) -> Result<JoinHandle<()>, Box<dyn Error>> {
     let socket_listener_thread = match thread::Builder::new()
         .name("socket_listener_thread".to_string())
         .spawn(move || {
-            let listener = match create_socket() {
-                Ok(listener) => listener,
-                Err(err) => {
-                    exit_with_error_notification(
-                        format!("Error creating socket: {}", err).as_str(),
-                    );
-                }
-            };
+            let listener = create_socket(&socket_path);
             if let Err(err) = listen_for_connections(
                 &listener,
                 &child_program_finished,
@@ -49,7 +43,7 @@ pub fn create_socket_listener_thread(
             }
             println!("Finished listening for connections.");
 
-            match socket::close_socket() {
+            match socket::close_socket(&socket_path) {
                 Ok(()) => {
                     println!("Socket closed!");
                 }

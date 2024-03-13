@@ -1,7 +1,7 @@
 use crate::config::get_curr_path;
 use crate::csv_writer::remove_old_data;
 use crate::notification::exit_with_error_notification;
-use crate::{ALERT_SCREEN_ENV_VAR, SOCKET_PATH};
+use crate::ALERT_SCREEN_ENV_VAR;
 use std::error::Error;
 use std::io::{Read, Write};
 use std::net::Shutdown;
@@ -10,23 +10,32 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::{fs, os::unix::net::UnixListener};
 
-pub fn create_socket() -> Result<UnixListener, Box<dyn Error>> {
-    let listener = UnixListener::bind(SOCKET_PATH)?;
-    Ok(listener)
+pub fn create_socket(socket_path: &String) -> UnixListener {
+    let listener = match UnixListener::bind(socket_path) {
+        Ok(listener) => listener,
+        Err(err) => {
+            exit_with_error_notification(format!("Error creating socket: {}", err).as_str());
+        }
+    };
+    listener
 }
-pub fn close_socket() -> Result<(), Box<dyn Error>> {
-    fs::remove_file(SOCKET_PATH)?;
+pub fn close_socket(socket_path: &String) -> Result<(), Box<dyn Error>> {
+    fs::remove_file(socket_path)?;
     Ok(())
 }
 
-// Send the terminating stream to close socket connection
-pub fn send_terminating_mssg() {
-    let mut stream = match UnixStream::connect(SOCKET_PATH) {
+fn connect_to_socket(socket_path: String) -> UnixStream {
+    let stream = match UnixStream::connect(socket_path) {
         Ok(stream) => stream,
         Err(err) => {
             exit_with_error_notification(format!("Error connecting to socket: {}", err).as_str());
         }
     };
+    stream
+}
+// Send the terminating stream to close socket connection
+pub fn send_terminating_mssg(socket_path: String) {
+    let mut stream = connect_to_socket(socket_path);
     match stream.write_all(b"Terminating Stream") {
         Ok(()) => {
             println!("Terminating stream sent.");

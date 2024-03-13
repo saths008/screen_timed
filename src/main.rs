@@ -46,6 +46,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         Arc::clone(&child_program_finished),
         Arc::clone(&child_update_csv),
         alert_screen_time,
+        SOCKET_PATH.to_string(),
     ) {
         Ok(socket_listener_thread) => socket_listener_thread,
         Err(err) => {
@@ -78,7 +79,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     println!("Signal received!");
-    send_terminating_mssg();
+    send_terminating_mssg(SOCKET_PATH.to_string());
 
     for (program_name, duration) in &program_times {
         println!("{}: {}", program_name, duration.as_secs());
