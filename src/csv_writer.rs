@@ -25,8 +25,8 @@ pub struct Row {
 
 pub fn write_data_to_csv(
     program_times: &HashMap<String, time::Duration>,
+    csv_path: &String,
 ) -> Result<(), Box<dyn Error>> {
-    let csv_path = SCREEN_DATA_CSV_PATH.to_string();
     let file = OpenOptions::new().append(true).open(csv_path)?;
     let mut wtr = WriterBuilder::new().has_headers(false).from_writer(file);
     for (program_name, duration) in program_times {
@@ -40,10 +40,10 @@ pub fn write_data_to_csv(
     Ok(())
 }
 
-pub fn remove_old_data(months: u32) -> Result<(), Box<dyn Error>> {
-    let backup_screen_csv_path = format!("backup_{}", SCREEN_DATA_CSV_PATH);
+pub fn remove_old_data(months: u32, csv_path: &String) -> Result<(), Box<dyn Error>> {
+    let backup_screen_csv_path = format!("backup_{}", csv_path);
     copy(SCREEN_DATA_CSV_PATH, &backup_screen_csv_path)?;
-    let new_screen_csv_path = format!("new_{}", SCREEN_DATA_CSV_PATH);
+    let new_screen_csv_path = format!("new_{}", csv_path);
 
     File::create(&new_screen_csv_path)?;
     let mut rdr = ReaderBuilder::new().from_path(&backup_screen_csv_path)?;

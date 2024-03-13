@@ -1,7 +1,7 @@
 use crate::config::get_curr_path;
 use crate::csv_writer::remove_old_data;
 use crate::notification::exit_with_error_notification;
-use crate::ALERT_SCREEN_ENV_VAR;
+use crate::{ALERT_SCREEN_ENV_VAR, SCREEN_DATA_CSV_PATH};
 use std::error::Error;
 use std::io::{Read, Write};
 use std::net::Shutdown;
@@ -117,7 +117,7 @@ fn handle_client(
                     return Ok(());
                 }
             };
-            match remove_old_data(months) {
+            match remove_old_data(months, &SCREEN_DATA_CSV_PATH.to_string()) {
                 Ok(()) => {
                     stream.write_all(b"Success")?;
                     println!("Successfully removed old data!");

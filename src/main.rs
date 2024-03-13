@@ -67,7 +67,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         if update_csv.load(Ordering::Relaxed) {
             println!("Updating csv...");
-            if let Err(err) = write_data_to_csv(&program_times) {
+            if let Err(err) = write_data_to_csv(&program_times, &SCREEN_DATA_CSV_PATH.to_string()) {
                 exit_with_error_notification(format!("Error writing to csv: {}", err).as_str());
             }
             program_times.clear();
@@ -84,7 +84,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     for (program_name, duration) in &program_times {
         println!("{}: {}", program_name, duration.as_secs());
     }
-    match write_data_to_csv(&program_times) {
+    match write_data_to_csv(&program_times, &SCREEN_DATA_CSV_PATH.to_string()) {
         Ok(()) => {
             println!("Finished writing to csv.");
         }
