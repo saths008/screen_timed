@@ -1,6 +1,5 @@
-use std::{env, path::PathBuf, string::String};
+use std::string::String;
 
-use crate::SCREEN_DATA_CSV_PATH;
 use crate::{notification::exit_with_error_notification, ALERT_SCREEN_ENV_VAR};
 
 #[derive(Debug)]
@@ -30,27 +29,6 @@ impl Config {
     }
 }
 
-pub fn get_curr_path() -> String {
-    let current_path: PathBuf = match env::current_dir() {
-        Ok(path) => path,
-        Err(err) => {
-            exit_with_error_notification(
-                format!("Exiting: Error getting current path: {}", err).as_str(),
-            );
-        }
-    };
-    let current_path_str = match current_path.to_str() {
-        Some(path) => {
-            let mut full_path = path.to_string();
-            full_path.push_str(format!("/{}", SCREEN_DATA_CSV_PATH.to_string()).as_str());
-            full_path
-        }
-        None => {
-            exit_with_error_notification("Error getting the current path!");
-        }
-    };
-    current_path_str
-}
 pub fn new_config() -> Config {
     if let Err(err) = dotenvy::dotenv() {
         exit_with_error_notification(format!("Error loading .env file: {}", err).as_str());
@@ -76,4 +54,37 @@ pub fn new_config() -> Config {
 
     config.print_out_config();
     config
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::prelude::*;
+
+    fn generate_random_number() -> u64 {
+        rand::thread_rng().gen()
+    }
+    fn generate_random_number_as_str() -> (u64, String) {
+        let rand_number = generate_random_number();
+        let rand_number_as_str = rand_number.to_string();
+        (rand_number, rand_number_as_str)
+    }
+    #[test]
+    fn build_config_passes_with_valid_inputs() {
+        let (rand_number, rand_number_as_str) = generate_random_number_as_str();
+        let config = Config::build(rand_number_as_str.as_str()).unwrap();
+        assert_eq!(config.get_alert_screen_time(), rand_number);
+    }
+    #[test]
+    fn get_alert_screen_time_is_correct() {
+        let (_, rand_number_as_str) = generate_random_number_as_str();
+        let config = Config::build(rand_number_as_str.as_str()).unwrap();
+        assert_eq!(config.get_alert_screen_time(), config.alert_screen_time);
+    }
+
+    #[test]
+    fn env_file_is_read_correctly() {
+        let config = new_config();
+        assert_eq!(config.alert_screen_time, 45);
+    }
 }

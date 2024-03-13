@@ -1,5 +1,4 @@
-use crate::config::get_curr_path;
-use crate::csv_writer::remove_old_data;
+use crate::csv_writer::{get_curr_path_to_csv, remove_old_data};
 use crate::notification::exit_with_error_notification;
 use crate::{ALERT_SCREEN_ENV_VAR, SCREEN_DATA_CSV_PATH};
 use std::error::Error;
@@ -96,7 +95,7 @@ fn handle_client(
             Ok(())
         }
         s if s == path_str => {
-            let curr_path = get_curr_path();
+            let curr_path = get_curr_path_to_csv();
             stream.write_all(curr_path.as_bytes())?;
             println!("Sent path! - {}", curr_path);
             Ok(())

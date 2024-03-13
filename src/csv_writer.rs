@@ -3,7 +3,9 @@ use csv::WriterBuilder;
 use serde_derive::{Deserialize, Serialize};
 use serde_with::serde_as;
 use serde_with::TimestampSeconds;
+use std::env;
 use std::fs::{copy, remove_file, rename, File, OpenOptions};
+use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
 use std::{
     collections::HashMap,
@@ -11,6 +13,7 @@ use std::{
     time::{self, SystemTime},
 };
 
+use crate::notification::exit_with_error_notification;
 use crate::SCREEN_DATA_CSV_PATH;
 
 #[serde_as]
@@ -21,6 +24,27 @@ pub struct Row {
     application: String,
     //How long in seconds the application was active
     duration: u64,
+}
+pub fn get_curr_path_to_csv() -> String {
+    let current_path: PathBuf = match env::current_dir() {
+        Ok(path) => path,
+        Err(err) => {
+            exit_with_error_notification(
+                format!("Exiting: Error getting current path: {}", err).as_str(),
+            );
+        }
+    };
+    let current_path_str = match current_path.to_str() {
+        Some(path) => {
+            let mut full_path = path.to_string();
+            full_path.push_str(format!("/{}", SCREEN_DATA_CSV_PATH.to_string()).as_str());
+            full_path
+        }
+        None => {
+            exit_with_error_notification("Error getting the current path!");
+        }
+    };
+    current_path_str
 }
 
 pub fn write_data_to_csv(
