@@ -1,14 +1,20 @@
 # screen-timed
 
+Ubuntu doesn't come with a screen time tracker and much of the software available is too complex or doesn't provide a nice UI. This project aims to provide a screen time tracker for Ubuntu by monitoring the active windows.
+
 ![Screenshot 1](/docs/screenshots/week-screenshot.png)
 ![Screenshot 2](/docs/screenshots/day-screenshot.png)
 
-daemon folder: Linux daemon that tracks and records time spent on active applications.
-Other features include:
+## Project Structure
 
-- Sending notifications every x minutes.
+There are 2 folders:
 
-deskop-app folder: Data is processed and viewable through the desktop application.
+- daemon
+- desktop-app
+
+The daemon folder contains a Linux daemon that tracks and records time spent on active applications. The Linux daemon also comes with features such as sending screen time reminders every x minutes.
+
+The desktop app folder contains the desktop app which process screen time data to make it viewiable through graphs, etc.
 
 ## Set up of daemon
 
@@ -32,7 +38,7 @@ and you should be back on wayland.
 
 </details>
 
-4.  To test if your env display works, in the main() of main.rs, insert into main.rs so:
+3.  To test if your env display works, in the main() of main.rs, insert into main.rs so:
 
 ```rust
 fn main() {
@@ -49,18 +55,18 @@ fn main() {
 }
 ```
 
-5. Run `cargo run` and see if xclock opens. If it does, you're good to go. Go ahead and return main.rs to its original state.
+4. Run `cargo run` and see if xclock opens. If it does, you're good to go. Go ahead and return main.rs to its original state.
 
-6. Now in the root, run `sudo python3 daemon_setup.py`. This requires sudo as it creates a systemd service.
+5. Now in the root, run `sudo python3 daemon_setup.py`. This requires sudo as it creates a systemd service.
 
-7. If you would like to remove the daemonm run `sudo python3 daemon_removal.py`.
+6. If you would like to remove the daemonm run `sudo python3 daemon_removal.py`.
 
-8. To view logs:
+7. To view logs:
    `sudo journalctl -u screen_timed.service | less`
    To view the status:
    `sudo systemctl status screen_timed.service`
 
-9. To run the tests for the daemon:
+8. To run the tests for the daemon:
 
 - `cd daemon`
 - `cargo test` or `cargo test -- --nocapture` to see stdout.
@@ -77,7 +83,6 @@ fn main() {
 - [Install Rust and cargo](https://www.rust-lang.org/tools/install)
 - [Install Tauri](https://tauri.app/)
 - [Install node](https://github.com/nvm-sh/nvm)
-- Set up [screen-timed](https://github.com/saths008/screen-timed)
 - `cargo install tauri-cli`
 - To run:
   `cargo tauri dev`
