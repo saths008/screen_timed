@@ -30,33 +30,35 @@ pub fn create_socket_listener_thread(
     let socket_listener_thread = match thread::Builder::new()
         .name("socket_listener_thread".to_string())
         .spawn(move || {
-            let listener = create_socket(&socket_path);
+            let (socket, tcp_listener) = create_socket(&socket_path);
             if let Err(err) = listen_for_connections(
-                &listener,
+                &tcp_listener,
                 &child_program_finished,
                 &child_update_csv,
                 alert_screen_time,
             ) {
-                exit_with_error_notification(
-                    format!("Error listening for connections: {}", err).as_str(),
-                );
+                let error_message = format!("Error listening for connections: {}", err);
+                eprintln!("{}", error_message);
+                exit_with_error_notification(error_message.as_str());
             }
             println!("Finished listening for connections.");
 
-            match socket::close_socket(&socket_path) {
+            match socket::close_socket(socket) {
                 Ok(()) => {
                     println!("Socket closed!");
                 }
                 Err(err) => {
-                    exit_with_error_notification(format!("Error closing socket: {}", err).as_str());
+                    let error_message = format!("Error closing socket: {}", err);
+                    eprintln!("{}", error_message);
+                    exit_with_error_notification(error_message.as_str());
                 }
             }
         }) {
         Ok(thread) => thread,
         Err(err) => {
-            exit_with_error_notification(
-                format!("Error creating socket listener thread: {}", err).as_str(),
-            );
+            let error_message = format!("Error creating socket listener thread: {}", err);
+            eprintln!("{}", error_message);
+            exit_with_error_notification(error_message.as_str());
         }
     };
     Ok(socket_listener_thread)
@@ -76,40 +78,44 @@ mod tests {
     #[test]
     #[serial]
     fn test_create_socket_listener_thread() {
-        let (temp_dir, expected_csv_path) = setup();
-        let socket_path = get_socket_path(&temp_dir);
+        let (temp_dir, _) = setup();
+        // let socket_path = get_socket_path(&temp_dir);
 
         let child_program_finished = Arc::new(AtomicBool::new(false));
         let child_update_csv = Arc::new(AtomicBool::new(false));
         let alert_screen_time = 45;
+        let socket_addr = "[::1]:42345".to_string();
+
         //creates socket, listens for connections, and closes socket
         let socket_listener_thread = create_socket_listener_thread(
             child_program_finished.clone(),
             child_update_csv,
             alert_screen_time,
-            socket_path.clone(),
+            socket_addr.clone(),
         )
         .unwrap();
         //Wait for socket_listener_thread to set up
         std::thread::sleep(std::time::Duration::from_secs(3));
 
-        let mut stream = connect_to_socket(socket_path.clone());
-        stream.write_all(b"PATH").unwrap();
+        let mut stream = connect_to_socket(socket_addr.clone());
+        println!("Socket connected");
+        stream.write_all(b"HEALTH_CHECK").unwrap();
+        println!("Sent HEALTH_CHECK request");
+        println!("stream before shutdown: {:?}", stream);
         stream.shutdown(Shutdown::Write).unwrap();
-        println!("Sent PATH request!");
+        println!("stream after write shutdown: {:?}", stream);
         let mut received = String::new();
         stream.read_to_string(&mut received).unwrap();
-        println!("received: {}", received);
-        stream.shutdown(Shutdown::Read).unwrap();
+        println!("response received from socket: {}", received);
 
-        send_terminating_mssg(socket_path.clone());
         //terminate socket_listener_thread
         child_program_finished.store(true, Ordering::Relaxed);
+        send_terminating_mssg(socket_addr.clone());
+
         println!("program_finished set to true");
-        assert_eq!(received, expected_csv_path);
+        assert_eq!(received, "Ok");
         socket_listener_thread.join().unwrap();
 
         //if socket is closed, it does not exist
-        assert!(!Path::new(&socket_path).exists());
     }
 }

@@ -4,6 +4,7 @@ Ubuntu doesn't come with a screen time tracker and much of the software availabl
 
 ![Screenshot 1](/docs/screenshots/week-screenshot.png)
 ![Screenshot 2](/docs/screenshots/day-screenshot.png)
+![Screenshot 3](/docs/screenshots/other-screenshot.png)
 
 ## Project Structure
 
