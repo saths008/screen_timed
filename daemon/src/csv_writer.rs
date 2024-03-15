@@ -5,6 +5,7 @@ use serde_with::serde_as;
 use serde_with::TimestampSeconds;
 use std::env;
 use std::fs::{copy, remove_file, rename, File, OpenOptions};
+use std::io::Seek;
 use std::path::PathBuf;
 use std::time::UNIX_EPOCH;
 use std::{
@@ -45,15 +46,24 @@ pub fn get_curr_path_to_csv(csv_path: &String) -> String {
     };
     current_path_str
 }
+
 pub fn write_data_to_csv(
     program_times: &HashMap<String, time::Duration>,
     csv_name: &String,
+    timestamp: SystemTime,
 ) -> Result<(), Box<dyn Error>> {
-    let file = OpenOptions::new().append(true).open(csv_name)?;
-    let mut wtr = WriterBuilder::new().has_headers(false).from_writer(file);
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .append(true)
+        .open(csv_name)?;
+    let needs_headers = file.seek(std::io::SeekFrom::End(0))? == 0;
+    let mut wtr = WriterBuilder::new()
+        .has_headers(needs_headers)
+        .from_writer(file);
     for (program_name, duration) in program_times {
         wtr.serialize(Row {
-            timestamp: SystemTime::now(),
+            timestamp,
             application: program_name.to_string(),
             duration: duration.as_secs(),
         })?;
@@ -118,18 +128,6 @@ mod tests {
         Ok(records)
     }
 
-    fn write_header_to_csv(csv_path: &String, timestamp: SystemTime) -> Result<(), Box<dyn Error>> {
-        let file = OpenOptions::new().write(true).create(true).open(csv_path)?;
-        let mut wtr = WriterBuilder::new().has_headers(true).from_writer(file);
-        wtr.serialize(Row {
-            timestamp,
-            application: "Application".to_string(),
-            duration: 0,
-        })?;
-        wtr.flush()?;
-        Ok(())
-    }
-
     #[test]
     #[serial]
     fn test_get_curr_path_to_csv() {
@@ -147,7 +145,9 @@ mod tests {
     #[serial]
     fn test_write_headers_to_csv() {
         let (_temp_dir, actual_path_to_csv) = setup();
-        write_header_to_csv(&actual_path_to_csv, SystemTime::now()).unwrap();
+        let mut program_times: HashMap<String, time::Duration> = HashMap::new();
+        program_times.insert("Application".to_string(), time::Duration::from_secs(0));
+        write_data_to_csv(&program_times, &CSV_NAME.to_string(), SystemTime::now()).unwrap();
         let rows_vector = read_csv(&actual_path_to_csv).unwrap();
         println!("rows_vector[0]: {:?}", rows_vector[0]);
         assert_eq!(rows_vector.len(), 1);
@@ -159,28 +159,34 @@ mod tests {
     #[serial]
     fn test_write_data_to_csv() {
         let (_temp_dir, actual_path_to_csv) = setup();
-        write_header_to_csv(&actual_path_to_csv, SystemTime::now()).unwrap();
         let mut program_times: HashMap<String, time::Duration> = HashMap::new();
+        program_times.insert("Application".to_string(), time::Duration::from_secs(0));
         program_times.insert("Test".to_string(), time::Duration::from_secs(10));
-        write_data_to_csv(&program_times, &CSV_NAME.to_string()).unwrap();
+        write_data_to_csv(&program_times, &CSV_NAME.to_string(), SystemTime::now()).unwrap();
         let rows_vector = read_csv(&actual_path_to_csv).unwrap();
 
         println!("rows_vector: {:?}", rows_vector);
         assert_eq!(rows_vector.len(), 2);
-        assert_eq!(rows_vector[0].application, "Application");
-        assert_eq!(rows_vector[0].duration, 0);
-        assert_eq!(rows_vector[1].application, "Test");
-        assert_eq!(rows_vector[1].duration, 10);
+        if rows_vector[0].application == "Application" {
+            assert_eq!(rows_vector[0].duration, 0);
+            assert_eq!(rows_vector[1].application, "Test");
+            assert_eq!(rows_vector[1].duration, 10);
+        } else {
+            assert_eq!(rows_vector[1].application, "Application");
+            assert_eq!(rows_vector[1].duration, 0);
+            assert_eq!(rows_vector[0].application, "Test");
+            assert_eq!(rows_vector[0].duration, 10);
+        }
     }
 
     #[test]
     #[serial]
     fn test_remove_all_data() {
         let (_temp_dir, actual_path_to_csv) = setup();
-        write_header_to_csv(&actual_path_to_csv, SystemTime::now()).unwrap();
         let mut program_times: HashMap<String, time::Duration> = HashMap::new();
+        program_times.insert("Application".to_string(), time::Duration::from_secs(0));
         program_times.insert("Test".to_string(), time::Duration::from_secs(10));
-        write_data_to_csv(&program_times, &CSV_NAME.to_string()).unwrap();
+        write_data_to_csv(&program_times, &CSV_NAME.to_string(), SystemTime::now()).unwrap();
         let mut rows_vector = read_csv(&actual_path_to_csv).unwrap();
         assert_eq!(rows_vector.len(), 2);
 
@@ -198,11 +204,13 @@ mod tests {
         let now = SystemTime::now();
         let one_month = Duration::from_secs(60 * 60 * 24 * 30);
         let two_months_ago = now.checked_sub(2 * one_month).unwrap();
-        write_header_to_csv(&actual_path_to_csv, two_months_ago).unwrap();
 
         let mut program_times: HashMap<String, time::Duration> = HashMap::new();
+        program_times.insert("Application".to_string(), time::Duration::from_secs(0));
+        write_data_to_csv(&program_times, &CSV_NAME.to_string(), two_months_ago).unwrap();
+        program_times.clear();
         program_times.insert("Test".to_string(), time::Duration::from_secs(10));
-        write_data_to_csv(&program_times, &CSV_NAME.to_string()).unwrap();
+        write_data_to_csv(&program_times, &CSV_NAME.to_string(), SystemTime::now()).unwrap();
 
         let mut rows_vector = read_csv(&actual_path_to_csv).unwrap();
         assert_eq!(rows_vector.len(), 2);

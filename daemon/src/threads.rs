@@ -105,6 +105,7 @@ mod tests {
         send_terminating_mssg(socket_path.clone());
         //terminate socket_listener_thread
         child_program_finished.store(true, Ordering::Relaxed);
+        println!("program_finished set to true");
         assert_eq!(received, expected_csv_path);
         socket_listener_thread.join().unwrap();
 

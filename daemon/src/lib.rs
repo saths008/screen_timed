@@ -10,6 +10,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::thread;
+use std::time::SystemTime;
 use std::time::{self};
 use threads::{create_alert_screen_thread, create_socket_listener_thread};
 
@@ -68,7 +69,12 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         }
         if update_csv.load(Ordering::Relaxed) {
             println!("Updating csv...");
-            if let Err(err) = write_data_to_csv(&program_times, &SCREEN_DATA_CSV_PATH.to_string()) {
+            if let Err(err) = write_data_to_csv(
+                &program_times,
+                &SCREEN_DATA_CSV_PATH.to_string(),
+                SystemTime::now(),
+            ) {
+                eprintln!("Error writing to csv: {}", err);
                 exit_with_error_notification(format!("Error writing to csv: {}", err).as_str());
             }
             program_times.clear();
@@ -85,7 +91,11 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     for (program_name, duration) in &program_times {
         println!("{}: {}", program_name, duration.as_secs());
     }
-    match write_data_to_csv(&program_times, &SCREEN_DATA_CSV_PATH.to_string()) {
+    match write_data_to_csv(
+        &program_times,
+        &SCREEN_DATA_CSV_PATH.to_string(),
+        SystemTime::now(),
+    ) {
         Ok(()) => {
             println!("Finished writing to csv.");
         }

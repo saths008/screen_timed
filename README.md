@@ -1,18 +1,18 @@
 # screen-timed
 
-Linux daemon that tracks and records time spent on active applications.
+![Screenshot 1](/docs/screenshots/week-screenshot.png)
+![Screenshot 2](/docs/screenshots/day-screenshot.png)
+
+daemon folder: Linux daemon that tracks and records time spent on active applications.
 Other features include:
 
 - Sending notifications every x minutes.
 
-Data is processed and viewable through the [screen-time-app](https://github.com/saths008/screen-time-app).
+deskop-app folder: Data is processed and viewable through the desktop application.
 
-## Set up
+## Set up of daemon
 
 1. [Install Rust and cargo](https://www.rust-lang.org/tools/install)
-2. Create a `screen_time_data.csv` in the root.
-
-### Setting up the linux daemon:
 
 2. This has been tested on Wayland and x11, (find out by doing `echo $XDG_SESSION_TYPE`):
 <details>
@@ -32,28 +32,12 @@ and you should be back on wayland.
 
 </details>
 
-3. Create a screen-timed.service in /etc/systemd/system/ with content:
-
-```
-[Unit]
-Description=Screen Time Daemon
-[Service]
-ExecStart=<pwd-to-screen-timed>/target/release/screen_timed
-WorkingDirectory=<pwd-to-screen-timed>
-Restart=always
-User=<username>
-Environment=DISPLAY=:0
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Environment=DISPLAY=:1, replace :1 with whatever the output of `echo $DISPLAY` gives you.
-
-4. To test if this works, in the main() of main.rs, insert:
+4.  To test if your env display works, in the main() of main.rs, insert into main.rs so:
 
 ```rust
-    // should open up xclock, most linux distros have it installed
+fn main() {
+    // screen_timed::run().unwrap();
+
      match Command::new("xclock").output() {
          Ok(output) => {
              println!("output: {:?}", output);
@@ -62,19 +46,43 @@ Environment=DISPLAY=:1, replace :1 with whatever the output of `echo $DISPLAY` g
              println!("Error: {}", err);
          }
      }
+}
 ```
 
-5. Enable the daemon:
-   `sudo systemctl enable screen-timed.service`
+5. Run `cargo run` and see if xclock opens. If it does, you're good to go. Go ahead and return main.rs to its original state.
 
-6. To reload and restart the daemon thread:
-   `sudo systemctl daemon-reload`
-   `sudo systemctl restart screen-timed.service`
-7. To view logs:
-   `sudo journalctl -u screen-timed.service | less`
+6. Now in the root, run `sudo python3 daemon_setup.py`. This requires sudo as it creates a systemd service.
+
+7. If you would like to remove the daemonm run `sudo python3 daemon_removal.py`.
+
+8. To view logs:
+   `sudo journalctl -u screen_timed.service | less`
    To view the status:
-   `sudo systemctl status screen-timed.service`
+   `sudo systemctl status screen_timed.service`
 
-## Running Tests
+9. To run the tests for the daemon:
 
-`cargo test` or `cargo test -- --nocapture` to see stdout.
+- `cd daemon`
+- `cargo test` or `cargo test -- --nocapture` to see stdout.
+
+## Set up of desktop-app
+
+1. Refer to the latest release on the GitHub releases page for the .deb file.
+   To install a .deb file:
+
+- `sudo dpkg -i /path/to/deb/file`
+
+2. Building from source / Just running the desktop app:
+
+- [Install Rust and cargo](https://www.rust-lang.org/tools/install)
+- [Install Tauri](https://tauri.app/)
+- [Install node](https://github.com/nvm-sh/nvm)
+- Set up [screen-timed](https://github.com/saths008/screen-timed)
+- `cargo install tauri-cli`
+- To run:
+  `cargo tauri dev`
+
+- To bundle:
+  `cargo tauri build`
+
+- You can now find the appimage or the deb here: `<pwd-to-screen_timed>/desktop_app/src-tauri/target/release/bundle/`
