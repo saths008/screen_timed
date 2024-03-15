@@ -1,6 +1,6 @@
 # screen-timed
 
-Ubuntu doesn't come with a screen time tracker and much of the software available is too complex or doesn't provide a nice UI. This project aims to provide a screen time tracker for Ubuntu by monitoring the active windows.
+Ubuntu doesn't come with a screen time tracker and much of the software available is too complex or doesn't provide a nice UI. This project aims to provide a screen time tracker and desktop app for Linux by monitoring the active windows.
 
 ![Screenshot 1](/docs/screenshots/week-screenshot.png)
 ![Screenshot 2](/docs/screenshots/day-screenshot.png)
