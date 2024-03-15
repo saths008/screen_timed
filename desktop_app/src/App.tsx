@@ -280,6 +280,20 @@ function App() {
     setChartSet(false);
     setChartSet(true);
   }
+  const [healthCheck, setHealthCheck] = createSignal<boolean>(false);
+  async function getHealthCheckStatus() {
+    try {
+      let message = await invoke("send_get_health_check_message");
+      console.log(`health check message: ${message}`);
+      if (message == "Ok") {
+        setHealthCheck(true);
+      }
+    } catch (e) {
+      console.log(`Error fetching health check: ${JSON.stringify(e)}`);
+      setHealthCheck(true);
+    }
+  }
+
   const [deleteError, setDeleteError] = createSignal<string>();
   async function deleteMonthsData() {
     try {
@@ -374,6 +388,7 @@ function App() {
   });
 
   onMount(async () => {
+    await getHealthCheckStatus();
     await updateScreenTime();
     setUpdated(true);
   });
@@ -575,7 +590,7 @@ function App() {
         </Grid>
       </TabsContent>
       <TabsContent value="other" class="space-y-4">
-        <div class="grid w-full grid-cols-2 ">
+        <div class="grid w-full grid-cols-3">
           <Card class="w-[380px]">
             <CardHeader>
               <CardTitle>Notifications</CardTitle>
@@ -623,6 +638,25 @@ function App() {
               </AlertDialogContent>
             </AlertDialog>
             {deleteError() && <p>{deleteError()}</p>}
+          </Card>
+          <Card class="w-[380px]">
+            <CardHeader>
+              <CardTitle>
+                Check if daemon and desktop app can communicate.
+              </CardTitle>
+            </CardHeader>
+            {healthCheck() ? (
+              <Button class="rounded-full bg-green-600">
+                Health Check Succesful.
+              </Button>
+            ) : (
+              <Button class="rounded-full bg-red-600">
+                Health Check Failed.
+              </Button>
+            )}
+            <Button onClick={getHealthCheckStatus}>
+              Call Health Check Right Now.
+            </Button>
           </Card>
         </div>
       </TabsContent>

@@ -1,38 +1,76 @@
 use crate::csv_writer::{get_curr_path_to_csv, remove_old_data};
 use crate::notification::exit_with_error_notification;
 use crate::{ALERT_SCREEN_ENV_VAR, SCREEN_DATA_CSV_PATH};
+use socket2::{Domain, Socket, Type};
 use std::error::Error;
-use std::io::{Read, Write};
-use std::net::Shutdown;
-use std::os::unix::net::UnixStream;
+use std::io::{self, Read, Write};
+use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::{fs, os::unix::net::UnixListener};
 
-pub fn create_socket(socket_path: &String) -> UnixListener {
-    let listener = match UnixListener::bind(socket_path) {
-        Ok(listener) => listener,
+pub fn create_socket(socket_addr: &String) -> (Socket, TcpListener) {
+    let socket = match Socket::new(Domain::IPV6, Type::STREAM, None) {
+        Ok(socket) => socket,
         Err(err) => {
-            exit_with_error_notification(format!("Error creating socket: {}", err).as_str());
+            let error_message = format!("Error creating socket: {}", err);
+            eprintln!("{}", error_message);
+            exit_with_error_notification(error_message.as_str());
         }
     };
-    listener
+
+    let address: SocketAddr = match socket_addr.parse() {
+        Ok(address) => address,
+        Err(err) => {
+            let error_message = format!("Error parsing socket address: {}", err);
+            eprintln!("{}", error_message);
+            exit_with_error_notification(error_message.as_str());
+        }
+    };
+    let address = address.into();
+    if let Err(err) = socket.bind(&address) {
+        let error_message = format!(
+            "Error binding socket to address: {}, err: {}",
+            &socket_addr, err
+        );
+        eprintln!("{}", error_message);
+        exit_with_error_notification(error_message.as_str());
+    }
+    if let Err(err) = socket.listen(128) {
+        let error_message = format!("Error listening on socket: {}", err);
+        eprintln!("{}", error_message);
+        exit_with_error_notification(error_message.as_str());
+    }
+    println!("Listening on {}", &socket_addr);
+
+    let listener = match socket.try_clone() {
+        Ok(cloned_socket) => cloned_socket.into(),
+        Err(err) => {
+            let error_message = format!("Error cloning socket: {}", err);
+            eprintln!("{}", error_message);
+            exit_with_error_notification(error_message.as_str());
+        }
+    };
+
+    (socket, listener)
 }
-pub fn close_socket(socket_path: &String) -> Result<(), Box<dyn Error>> {
-    fs::remove_file(socket_path)?;
-    Ok(())
+pub fn close_socket(socket: Socket) -> io::Result<()> {
+    println!("Closing socket...");
+    socket.shutdown(Shutdown::Both)
 }
 
-pub fn connect_to_socket(socket_path: String) -> UnixStream {
-    let stream = match UnixStream::connect(socket_path) {
+pub fn connect_to_socket(socket_addr: String) -> TcpStream {
+    let stream = match TcpStream::connect(socket_addr) {
         Ok(stream) => stream,
         Err(err) => {
-            exit_with_error_notification(format!("Error connecting to socket: {}", err).as_str());
+            let error_message = format!("Error connecting to socket: {}", err);
+            eprintln!("{}", error_message);
+            exit_with_error_notification(error_message.as_str());
         }
     };
     stream
 }
 // Send the terminating stream to close socket connection
+// When the listen_for_connection loop iterates as there is another stream, it will encounter the changed child_program_finished and break the loop.
 pub fn send_terminating_mssg(socket_path: String) {
     let mut stream = connect_to_socket(socket_path);
     match stream.write_all(b"Terminating Stream") {
@@ -40,9 +78,9 @@ pub fn send_terminating_mssg(socket_path: String) {
             println!("Terminating stream sent.");
         }
         Err(err) => {
-            exit_with_error_notification(
-                format!("Error sending terminating stream: {}", err).as_str(),
-            );
+            let error_message = format!("Error sending terminating stream: {}", err);
+            eprintln!("{}", error_message);
+            exit_with_error_notification(error_message.as_str());
         }
     }
     match stream.shutdown(Shutdown::Both) {
@@ -50,12 +88,14 @@ pub fn send_terminating_mssg(socket_path: String) {
             println!("Stream successfully shutdown.");
         }
         Err(err) => {
-            exit_with_error_notification(format!("Error shutting down stream: {}", err).as_str());
+            let error_message = format!("Error shutting down stream: {}", err);
+            eprintln!("{}", error_message);
+            exit_with_error_notification(error_message.as_str());
         }
     }
 }
 pub fn listen_for_connections(
-    listener: &UnixListener,
+    listener: &TcpListener,
     terminating_arc: &Arc<AtomicBool>,
     update_csv: &Arc<AtomicBool>,
     alert_screen_time: u64,
@@ -78,7 +118,7 @@ pub fn listen_for_connections(
     Ok(())
 }
 fn handle_client(
-    mut stream: UnixStream,
+    mut stream: TcpStream,
     update_csv: &Arc<AtomicBool>,
     alert_screen_time: u64,
 ) -> Result<(), Box<dyn Error>> {
@@ -86,8 +126,14 @@ fn handle_client(
     stream.read_to_string(&mut received)?;
     let update_csv_str = String::from("UPDATE_CSV");
     let path_str = String::from("PATH");
+    let health_check_str = String::from("HEALTH_CHECK");
     let alert_screen_env_var_str = ALERT_SCREEN_ENV_VAR.to_string();
     match received {
+        s if s == health_check_str => {
+            println!("Received HEALTH_CHECK request!");
+            stream.write_all(b"Ok")?;
+            Ok(())
+        }
         s if s == update_csv_str => {
             println!("Received UPDATE_CSV request!");
             update_csv.store(true, Ordering::Relaxed);
@@ -133,37 +179,5 @@ fn handle_client(
             println!("Received unknown request: {}", received);
             Ok(())
         }
-    }
-}
-#[cfg(test)]
-mod tests {
-
-    use super::*;
-    use crate::test_helpers::tests::{get_socket_path, setup};
-    use serial_test::serial;
-    use std::path::Path;
-
-    #[test]
-    #[serial]
-    fn test_create_socket() {
-        let (temp_dir, _) = setup();
-        let socket_path = get_socket_path(&temp_dir);
-        create_socket(&socket_path);
-        //if socket is created, it exists
-        assert!(Path::new(&socket_path).exists());
-        //temp_dir out of scope, socket is cleaned up
-    }
-
-    #[test]
-    #[serial]
-    fn test_create_socket_and_close_socket() {
-        let (temp_dir, _) = setup();
-        let socket_path = get_socket_path(&temp_dir);
-        create_socket(&socket_path);
-        //if socket is created, it exists
-        assert!(Path::new(&socket_path).exists());
-        close_socket(&socket_path).unwrap();
-        //if socket is closed, it does not exist
-        assert!(!Path::new(&socket_path).exists());
     }
 }

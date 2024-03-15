@@ -14,14 +14,6 @@ fn get_csv_path() -> Result<String, String> {
             return Err("Error while getting path from socket".to_string());
         }
     };
-    if csv_path == "/home/saath/Dev/screen-timed/screen_time_data.csv" {
-        println!("csv_paths are equal");
-    } else {
-        println!(
-            "csv_paths are not equal, one is: {}, other is: {}",
-            csv_path, "/home/saath/Dev/screen-timed/screen_time_data.csv"
-        );
-    }
     Ok(csv_path)
 }
 
@@ -37,6 +29,17 @@ fn get_week_screen_time(start_of_date: u64) -> Result<vec::Vec<vec::Vec<Row>>, S
         }
     }
 }
+#[tauri::command(rename_all = "snake_case")]
+fn send_get_health_check_message() -> Result<String, String> {
+    match socket_comm::get_health_check_message() {
+        Ok(health_check_message) => Ok(health_check_message),
+        Err(e) => {
+            println!("Error while sending message to socket: {}", e);
+            Err("Error getting health check message".to_string())
+        }
+    }
+}
+
 #[tauri::command(rename_all = "snake_case")]
 fn send_get_alert_screen_time_message() -> Result<u64, String> {
     match socket_comm::get_alert_screen_time_message() {
@@ -89,7 +92,8 @@ fn main() {
             get_week_screen_time,
             send_update_socket_message,
             send_get_alert_screen_time_message,
-            send_delete_months_data_message
+            send_delete_months_data_message,
+            send_get_health_check_message
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

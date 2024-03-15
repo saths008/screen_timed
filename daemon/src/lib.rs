@@ -23,7 +23,7 @@ mod socket;
 mod test_helpers;
 mod threads;
 
-const SOCKET_PATH: &str = "/tmp/screen-time-sock";
+const SOCKET_ADDR: &str = "[::1]:12345";
 const ALERT_SCREEN_ENV_VAR: &str = "ALERT_SCREEN";
 const SCREEN_DATA_CSV_PATH: &str = "screen_time_data.csv";
 
@@ -44,11 +44,13 @@ pub fn run() -> Result<(), Box<dyn Error>> {
 
     let child_program_finished = Arc::clone(&program_finished);
 
+    let socket_addr: &str = "[::1]:12345";
+
     let socket_listener_thread = match create_socket_listener_thread(
         Arc::clone(&child_program_finished),
         Arc::clone(&child_update_csv),
         alert_screen_time,
-        SOCKET_PATH.to_string(),
+        socket_addr.to_string(),
     ) {
         Ok(socket_listener_thread) => socket_listener_thread,
         Err(err) => {
@@ -86,7 +88,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     }
 
     println!("Signal received!");
-    send_terminating_mssg(SOCKET_PATH.to_string());
+    send_terminating_mssg(SOCKET_ADDR.to_string());
 
     for (program_name, duration) in &program_times {
         println!("{}: {}", program_name, duration.as_secs());
