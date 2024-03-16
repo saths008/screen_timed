@@ -15,6 +15,7 @@ serde_derive = "1.0.197"
 notify-rust = "4.10.0"
 dotenvy = "0.15.7"
 socket2 = "0.5.6"
+windows-service = "0.6.0"
 
 
 [dev-dependencies]

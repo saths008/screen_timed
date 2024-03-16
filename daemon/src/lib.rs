@@ -23,6 +23,9 @@ mod socket;
 mod test_helpers;
 mod threads;
 
+#[cfg(target_os = "windows")]
+mod windows;
+
 const SOCKET_ADDR: &str = "[::1]:12345";
 const ALERT_SCREEN_ENV_VAR: &str = "ALERT_SCREEN";
 const SCREEN_DATA_CSV_PATH: &str = "screen_time_data.csv";
@@ -76,7 +79,6 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 &SCREEN_DATA_CSV_PATH.to_string(),
                 SystemTime::now(),
             ) {
-                eprintln!("Error writing to csv: {}", err);
                 exit_with_error_notification(format!("Error writing to csv: {}", err).as_str());
             }
             program_times.clear();

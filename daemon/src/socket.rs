@@ -13,7 +13,6 @@ pub fn create_socket(socket_addr: &String) -> (Socket, TcpListener) {
         Ok(socket) => socket,
         Err(err) => {
             let error_message = format!("Error creating socket: {}", err);
-            eprintln!("{}", error_message);
             exit_with_error_notification(error_message.as_str());
         }
     };
@@ -22,7 +21,6 @@ pub fn create_socket(socket_addr: &String) -> (Socket, TcpListener) {
         Ok(address) => address,
         Err(err) => {
             let error_message = format!("Error parsing socket address: {}", err);
-            eprintln!("{}", error_message);
             exit_with_error_notification(error_message.as_str());
         }
     };
@@ -32,12 +30,10 @@ pub fn create_socket(socket_addr: &String) -> (Socket, TcpListener) {
             "Error binding socket to address: {}, err: {}",
             &socket_addr, err
         );
-        eprintln!("{}", error_message);
         exit_with_error_notification(error_message.as_str());
     }
     if let Err(err) = socket.listen(128) {
         let error_message = format!("Error listening on socket: {}", err);
-        eprintln!("{}", error_message);
         exit_with_error_notification(error_message.as_str());
     }
     println!("Listening on {}", &socket_addr);
@@ -46,7 +42,6 @@ pub fn create_socket(socket_addr: &String) -> (Socket, TcpListener) {
         Ok(cloned_socket) => cloned_socket.into(),
         Err(err) => {
             let error_message = format!("Error cloning socket: {}", err);
-            eprintln!("{}", error_message);
             exit_with_error_notification(error_message.as_str());
         }
     };
@@ -63,7 +58,6 @@ pub fn connect_to_socket(socket_addr: String) -> TcpStream {
         Ok(stream) => stream,
         Err(err) => {
             let error_message = format!("Error connecting to socket: {}", err);
-            eprintln!("{}", error_message);
             exit_with_error_notification(error_message.as_str());
         }
     };
@@ -79,7 +73,6 @@ pub fn send_terminating_mssg(socket_path: String) {
         }
         Err(err) => {
             let error_message = format!("Error sending terminating stream: {}", err);
-            eprintln!("{}", error_message);
             exit_with_error_notification(error_message.as_str());
         }
     }
@@ -89,7 +82,6 @@ pub fn send_terminating_mssg(socket_path: String) {
         }
         Err(err) => {
             let error_message = format!("Error shutting down stream: {}", err);
-            eprintln!("{}", error_message);
             exit_with_error_notification(error_message.as_str());
         }
     }

@@ -38,7 +38,6 @@ pub fn create_socket_listener_thread(
                 alert_screen_time,
             ) {
                 let error_message = format!("Error listening for connections: {}", err);
-                eprintln!("{}", error_message);
                 exit_with_error_notification(error_message.as_str());
             }
             println!("Finished listening for connections.");
@@ -49,7 +48,6 @@ pub fn create_socket_listener_thread(
                 }
                 Err(err) => {
                     let error_message = format!("Error closing socket: {}", err);
-                    eprintln!("{}", error_message);
                     exit_with_error_notification(error_message.as_str());
                 }
             }
@@ -57,7 +55,6 @@ pub fn create_socket_listener_thread(
         Ok(thread) => thread,
         Err(err) => {
             let error_message = format!("Error creating socket listener thread: {}", err);
-            eprintln!("{}", error_message);
             exit_with_error_notification(error_message.as_str());
         }
     };
